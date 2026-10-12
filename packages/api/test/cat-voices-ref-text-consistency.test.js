@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { afterEach, describe, it } from 'node:test';
 import { clearVoiceCache, getCatVoice } from '../dist/config/cat-voices.js';
 
@@ -48,10 +48,14 @@ describe('voice reference transcript consistency', () => {
     clearVoiceCache();
   });
 
-  it('every reference clip has one transcript across cat-template.json, cat-config.json and built-in defaults', () => {
+  it('every reference clip has one transcript across the template, available runtime config and built-in defaults', () => {
     const clips = new Map();
     for (const file of ['cat-template.json', 'cat-config.json']) {
-      collectFromJson(JSON.parse(readFileSync(new URL(file, REPO_ROOT), 'utf8')), clips, file);
+      const path = new URL(file, REPO_ROOT);
+      // The install-local catalog is optional and deliberately absent from public exports.
+      // Always compare the shipped template and defaults; also check a catalog when present.
+      if (file === 'cat-config.json' && !existsSync(path)) continue;
+      collectFromJson(JSON.parse(readFileSync(path, 'utf8')), clips, file);
     }
 
     process.env.CAT_TEMPLATE_PATH = '/tmp/nonexistent-cat-template-for-ref-text-test.json';
