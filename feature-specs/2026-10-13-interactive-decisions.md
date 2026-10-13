@@ -64,11 +64,13 @@ Codex 结构化 async question 在 invocation 内按真实 owner/原消息接入
 - 队列既有回归：`scripts/with-test-home.sh node --test test/invocation-queue.test.js`：149/149。
 - 隔离 Redis：经 `test:redis -- node --import tsx --test ...` 运行 26/26；新增测试独占临时 Redis 实际重启，验证 TTL=-1、CAS 单赢家、恢复 outbox 和答案历史。
 - 前端：4 个受影响测试文件 13/13，覆盖键盘、自由回答、原生提交与 IME。浏览器真实 ChatContainer 跑过暂缓→刷新→键盘提交→原步骤开始→刷新→改为自定义答案→窄屏取消，无重复启动；截图在 `.cat-cafe/test-evidence/interactive-decisions/`（本工位生成）。
-- API build、MCP build、API/Web typecheck、MCP canonical registry/bootstrap/protected-base 11 项通过；capability tips、skill references、skill surfaces 通过。
+- API build、MCP build、API/Web typecheck 通过；最终 MCP canonical registry/bootstrap/protected-base/registration 合跑 40 项通过；capability tips、skill references、skill surfaces 通过。
 - 五轴风险：行为=队列与提问续接；数据=用户答案永久存储/CAS/重启；安全=可信 owner 回调、精确卡片绑定；契约=新增 MCP 和 conversation question 分支；不可逆=无生产数据迁移、无对生产存储写入。
 - Design 对照：沿用原消息卡片和暖纸主题；焦点局部接管，输入框方向键不被劫持；没有把安排续接写成已消费。
 - Architecture ownership：沿用 runtime-interaction store、消息共享上下文、dispatch Queue；不新增平行审批/调度存储。旧阻塞 MCP 保持退役。
 - 根目录无媒体工件；实现工位 `/Users/yuki/Documents/AINest/cat-cafe-interactive-decisions`；隔离实际应用 web 5112 / API 3112 / Redis 6388。
+
+Fallback 坐标系自检：`check-fallback-layers.mjs` exit 0，但词法扫描触发阈值，不能当作无风险绿灯。当前唯一问题真相仍是 RuntimeInteractionStore；答案提交与续接共用同一 CAS/outbox，不存在“失败后换普通聊天、换用户或换任务”的兜底链。逐类核对如下：Service 的分支是状态校验、CAS 重试和空历史初值；StartGuard 是 owner/版本/取消校验，失败不执行；provider adapter 的 JSON catch 只排除非结构化消息，结构化问题鉴权失败会报错；composition 的 catch 只恢复本次撤下的队列项，其余空值是可选消息来源/历史初值；路由 catch 统一映射既有错误码，不另发消息；InMemory store 分支对应 Redis 的同一 CAS/所有权语义；表单和键盘分支处理空草稿、IME 与按键；浏览器 harness 分支隔离无关 API 与启动探活。删除这些边界会丢失校验或恢复语义，改为额外路由反而会增加真相源，因此保留，并列为审查重点。
 
 扩大检查的已定位限制（保留失败，不计为通过）：
 
