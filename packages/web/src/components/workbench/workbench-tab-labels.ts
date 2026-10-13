@@ -19,10 +19,15 @@ function numberIdenticalLabels(groups: [string, WorkspaceSurfaceDescriptor[]][],
   }
 }
 
-function modeTitle(surface: WorkspaceSurfaceDescriptor, modeLabels?: Readonly<Record<WorkspaceMode, string>>): string {
+function modeTitle(
+  surface: WorkspaceSurfaceDescriptor,
+  modeLabels?: Readonly<Record<WorkspaceMode, string>>,
+  voiceLabel?: string,
+): string {
+  const target = resolveWorkspaceDestinationTarget(surface);
+  if (voiceLabel && target?.destinationRef === 'host:voice') return voiceLabel;
   if (!modeLabels || surface.type !== 'workspace' || surface.renderer !== 'workspace-destination') return surface.title;
   if (resolveTeamWorkspaceTarget(surface)) return modeLabels.team;
-  const target = resolveWorkspaceDestinationTarget(surface);
   const mode = target?.destinationRef.startsWith('mode:') ? target.destinationRef.slice(5) : null;
   return isWorkspaceMode(mode) ? modeLabels[mode] : surface.title;
 }
@@ -37,8 +42,9 @@ function pathOrContextLabel(surface: WorkspaceSurfaceDescriptor, title: string):
 export function workbenchTabLabels(
   surfaces: readonly WorkspaceSurfaceDescriptor[],
   modeLabels?: Readonly<Record<WorkspaceMode, string>>,
+  voiceLabel?: string,
 ): ReadonlyMap<string, string> {
-  const labels = new Map(surfaces.map((surface) => [surface.id, modeTitle(surface, modeLabels)]));
+  const labels = new Map(surfaces.map((surface) => [surface.id, modeTitle(surface, modeLabels, voiceLabel)]));
   const duplicates = () => {
     const groups = new Map<string, WorkspaceSurfaceDescriptor[]>();
     for (const surface of surfaces) {

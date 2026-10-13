@@ -216,8 +216,8 @@ describe('F322 AC-B6–B8 · the Workspace home speaks the chosen language', () 
       expect(qa('.home-group-title').map((node) => node.textContent)).toEqual(['Activity', 'Code', 'Other']);
       expect(q('.home-signpost')?.textContent).toContain('approvals and items needing you are in To-do');
       expect(q('.home-signpost')?.textContent).toContain('Open Schedule');
-      expect(q('[data-workspace-destination="workspace:capability-evolution"]')?.getAttribute('aria-label')).toBe(
-        'Open Capability evolution',
+      expect(q('[data-workspace-destination="workspace:capability-evolution"]')?.textContent).toContain(
+        'Capability evolution',
       );
       expect(q('[data-workspace-destination="surface:changes"]')?.textContent).toContain('3 files');
     });
@@ -249,10 +249,10 @@ describe('F322 AC-B6–B8 · the Workspace home speaks the chosen language', () 
       const live = text();
       expect(live).toContain('All conversations · 3 running');
       expect(live).toContain('Current conversation');
-      expect(live).toContain('running full gate');
+      expect(live).toContain('Running full gate');
       expect(live).toContain('0:50');
       expect(live).toContain('Replying');
-      expect(live).toContain('running code checks');
+      expect(live).toContain('Running code checks');
       expect(
         qa('[data-testid="home-execution-trajectory"]').every((node) =>
           node.getAttribute('aria-label')?.includes('trajectory'),

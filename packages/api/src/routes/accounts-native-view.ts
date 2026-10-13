@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { type AccountConfig, builtinAccountIdForClient, type ClientId } from '@cat-cafe/shared';
 import { resolveByAccountRef } from '../config/account-resolver.js';
+import { readAccountStoreSnapshot } from '../config/account-store-snapshot.js';
 import { resolveCatCatalogPath } from '../config/cat-catalog-store.js';
 import { loadCatConfig, toAllCatConfigs } from '../config/cat-config-loader.js';
 import { inspectCodexLogin } from '../config/codex-account-identity.js';
@@ -18,11 +19,15 @@ export function listNativeAccountDefaults(projectRoot: string): Array<[string, A
       .filter((cat) => cat.id !== 'gpt-pro' && cat.cli)
       .map((cat) => cat.clientId),
   );
+  const store = readAccountStoreSnapshot(projectRoot);
   return [...clients].flatMap((client) => {
     const id = builtinAccountIdForClient(client as ClientId);
     if (!id) return [];
-    const profile = resolveByAccountRef(projectRoot, id);
-    return profile?.authType === 'oauth'
+    // A rejected ref is already exposed by the account catalog. Do not synthesize
+    // it, or let that one ref hide healthy defaults from other configured tools.
+    const verdict = store.inspect(id);
+    if (verdict.state === 'rejected') return [];
+    return !verdict.entry.account || verdict.entry.account.authType === 'oauth'
       ? [[id, { authType: 'oauth' as const, clientId: client as ClientId }] as [string, AccountConfig]]
       : [];
   });

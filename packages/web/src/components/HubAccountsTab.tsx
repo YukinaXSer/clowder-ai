@@ -4,14 +4,25 @@ import { useCatData } from '@/hooks/useCatData';
 import { AccountAddMenu } from './accounts/AccountAddMenu';
 import { AccountDirectoryRow } from './accounts/AccountDirectoryRow';
 import { AccountSwitchConfirm } from './accounts/AccountSwitchConfirm';
-import { accountIsSelected, accountMembers, accountProvider } from './accounts/account-directory-view';
+import {
+  accountDisplayName,
+  accountIsSelected,
+  accountMembers,
+  accountProvider,
+} from './accounts/account-directory-view';
+import { accountMessage } from './accounts/account-message';
+import { accountsCopy } from './accounts/accounts.shell-copy';
 import { useAccountDirectory } from './accounts/useAccountDirectory';
 import type { ProfileAuthType, ProfileItem } from './hub-accounts.types';
 import { normalizeBuiltinClientIds } from './hub-accounts.view';
+import { useShellCopy } from './shell/shell-copy';
+import { useShellLanguage } from './shell/shell-language';
 import { type UnifiedAuthEditData, UnifiedAuthModal } from './UnifiedAuthModal';
 import './accounts/account-directory.css';
 
 export function HubAccountsTab() {
+  const t = useShellCopy(accountsCopy);
+  const language = useShellLanguage();
   const directory = useAccountDirectory();
   const { cats } = useCatData();
   const [query, setQuery] = useState('');
@@ -25,7 +36,7 @@ export function HubAccountsTab() {
   const profiles = useMemo(() => normalizeBuiltinClientIds(directory.data?.providers ?? []), [directory.data]);
   const rows = profiles.map((account) => ({
     account,
-    provider: accountProvider(account),
+    provider: accountProvider(account, t),
     members: accountMembers(account, cats, directory.selection),
     used: accountIsSelected(account, cats, directory.selection),
   }));
@@ -49,6 +60,7 @@ export function HubAccountsTab() {
       (filter === 'all' || row.account.authType === filter) &&
       [
         row.provider,
+        accountDisplayName(row.account, t),
         row.account.displayName,
         row.account.codex?.identity?.email ?? '',
         row.account.nativeLogin?.identity?.email ?? '',
@@ -76,23 +88,23 @@ export function HubAccountsTab() {
     });
     setShowAuthModal(true);
   }
-  if (directory.loading && !directory.data) return <p>正在读取账号…</p>;
+  if (directory.loading && !directory.data) return <p>{t.loading}</p>;
   return (
     <div className="account-directory">
       <div className="account-toolbar">
         <input
           type="search"
-          aria-label="搜索账号"
-          placeholder="搜哪一家、号名、邮箱，或猫的名字"
+          aria-label={t.search}
+          placeholder={t.searchHint}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <div className="account-filters" role="group" aria-label="账号筛选">
+        <div className="account-filters" role="group" aria-label={t.filters}>
           {(
             [
-              ['all', '全部'],
-              ['oauth', 'OAuth 登录'],
-              ['api_key', 'API 密钥'],
+              ['all', t.all],
+              ['oauth', t.oauth],
+              ['api_key', t.apiKey],
             ] as const
           ).map(([value, label]) => (
             <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>
@@ -108,49 +120,48 @@ export function HubAccountsTab() {
           }}
         />
       </div>
-      {directory.error && (
-        <p role="alert">
-          {directory.error}{' '}
-          <button type="button" className="account-button" onClick={() => void directory.refresh()}>
-            重试读取
-          </button>
-        </p>
+      {directory.error && <p role="alert">{accountMessage(directory.error, language)}</p>}
+      {directory.memberError && <p role="status">{t.selectionUnknown}</p>}
+      {directory.data?.nativeDefaultsError && (
+        <p role="status">{accountMessage(directory.data.nativeDefaultsError, language)}</p>
       )}
-      {(directory.memberError || directory.data?.nativeDefaultsError) && (
-        <p role="status">{directory.memberError || directory.data?.nativeDefaultsError}；正在用的账号暂不能确认。</p>
+      {(directory.error || directory.memberError || directory.data?.nativeDefaultsError) && (
+        <button type="button" className="account-button" onClick={() => void directory.refresh()}>
+          {t.retryRead}
+        </button>
       )}
       {directory.selection?.state === 'mixed' && (
         <p className="account-notice">
-          Codex 的猫现在分别用{' '}
-          {new Set(directory.selection.members.filter((m) => m.available).map((m) => m.accountRef)).size} 个号：
-          {profiles
-            .filter((p) => directory.selection?.members.some((m) => m.available && m.accountRef === p.id))
-            .map(
-              (p) =>
-                `${p.displayName} ${directory.selection?.members.filter((m) => m.available && m.accountRef === p.id).length} 只`,
-            )
-            .join('，')}
-          。 选一个作为这一家正在用的号；用别的号的猫会先保留原号。
+          {t.mixed(
+            new Set(directory.selection.members.filter((m) => m.available).map((m) => m.accountRef)).size,
+            profiles
+              .filter((p) => directory.selection?.members.some((m) => m.available && m.accountRef === p.id))
+              .map(
+                (p) =>
+                  `${accountDisplayName(p, t)}${t.memberCount(directory.selection?.members.filter((m) => m.available && m.accountRef === p.id).length ?? 0)}`,
+              )
+              .join(language === 'zh' ? '，' : ', '),
+          )}
         </p>
       )}
-      <div role="group" aria-label="Account List" data-guide-id="accounts.account-list">
+      <div role="group" aria-label={t.list} data-guide-id="accounts.account-list">
         {(['oauth', 'api_key'] as const).map((type) => {
           const section = visible.filter((r) => r.account.authType === type);
           if (!section.length) return null;
           return (
             <section key={type} className="account-section">
               <h3>
-                {type === 'oauth' ? 'OAuth 登录' : 'API 密钥'} · {section.length}
+                {type === 'oauth' ? t.oauth : t.apiKey} · {section.length}
               </h3>
               <div className="account-table-scroll">
                 <table>
                   <thead>
                     <tr>
-                      <th>哪一家</th>
-                      <th>号</th>
-                      <th>状态</th>
-                      <th>谁在用</th>
-                      <th>动作</th>
+                      <th>{t.provider}</th>
+                      <th>{t.account}</th>
+                      <th>{t.status}</th>
+                      <th>{t.usedBy}</th>
+                      <th>{t.actions}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -166,7 +177,7 @@ export function HubAccountsTab() {
                           onEdit={edit}
                           actionError={
                             actionError?.ref === row.account.id && !row.account.codex?.attempt
-                              ? actionError.message
+                              ? t.loginUnconfirmed(accountMessage(actionError.message, language))
                               : undefined
                           }
                         />
@@ -189,18 +200,18 @@ export function HubAccountsTab() {
             </section>
           );
         })}
-        {!visible.length && <p className="account-empty">{query ? '没有找到匹配的账号。' : '没有这类账号。'}</p>}
+        {!visible.length && <p className="account-empty">{query ? t.noMatch : t.empty}</p>}
       </div>
       {!!directory.data?.unavailableAccounts?.length && (
         <section className="account-rejected">
           <button type="button" aria-expanded={brokenOpen} onClick={() => setBrokenOpen(!brokenOpen)}>
-            {directory.data.unavailableAccounts.length} 个用不了的旧账号 {brokenOpen ? '⌃' : '⌄'}
+            {t.rejectedCount(directory.data.unavailableAccounts.length)} {brokenOpen ? '⌃' : '⌄'}
           </button>
           {brokenOpen && (
             <ul>
               {directory.data.unavailableAccounts.map((row) => (
                 <li key={row.accountRef}>
-                  <strong>{row.accountRef}</strong>：{row.reason}
+                  <strong>{row.accountRef}</strong>: {accountMessage(row.reason, language)}
                 </li>
               ))}
             </ul>
@@ -219,7 +230,7 @@ export function HubAccountsTab() {
         onCreated={(ref, error, profile) => {
           setShowAuthModal(false);
           setEditTarget(undefined);
-          setActionError(error ? { ref, message: `登录未能确认：${error}。可以在这一行重试。` } : undefined);
+          setActionError(error ? { ref, message: error } : undefined);
           if (profile) update([profile]);
           void directory.refresh();
         }}

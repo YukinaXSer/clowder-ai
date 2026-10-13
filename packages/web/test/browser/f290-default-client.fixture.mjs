@@ -26,16 +26,16 @@ export async function verifyStandaloneClient({ context, evidence, seeded, servic
       body: await readFile(path.join(root, 'packages/web/public/avatars/owner.jpg')),
     }),
   );
-  await context.addInitScript(
-    ({ origin, token }) => {
-      if (location.origin === origin) sessionStorage.setItem(`collective-session:${origin}`, token);
-    },
-    { origin: serviceUrl, token: seeded.owner.sessionToken },
-  );
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(serviceUrl, { waitUntil: 'networkidle' });
+  const storageKey = `collective-session:${serviceUrl}`;
+  await page.evaluate(({ key, token }) => sessionStorage.setItem(key, token), {
+    key: storageKey,
+    token: seeded.owner.sessionToken,
+  });
+  await page.reload({ waitUntil: 'networkidle' });
   const home = page.getByTestId('collective-home');
   await home.getByRole('heading', { name: '猫咖共创组', exact: true }).waitFor();
   await home.getByText('这里还没有公共工作动态。', { exact: true }).waitFor();
@@ -45,6 +45,32 @@ export async function verifyStandaloneClient({ context, evidence, seeded, servic
   );
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
   await page.screenshot({ path: path.join(evidence, 'default-home-1440.png'), fullPage: true });
+
+  const rejectMeDuringRestart = async (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'INTERNAL', message: 'Collective 正在重新启动' } }),
+    });
+  await page.route(`${serviceUrl}/api/me`, rejectMeDuringRestart);
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('heading', { name: '现在还进不去', exact: true }).waitFor();
+  assert.equal(
+    await page.evaluate((key) => sessionStorage.getItem(key), storageKey),
+    seeded.owner.sessionToken,
+    'a temporary Service outage must not erase the still-valid browser session',
+  );
+  await page.screenshot({ path: path.join(evidence, 'default-session-recovery-unavailable.png'), fullPage: true });
+  await page.unroute(`${serviceUrl}/api/me`, rejectMeDuringRestart);
+  await page.reload({ waitUntil: 'networkidle' });
+  await home.getByRole('heading', { name: '猫咖共创组', exact: true }).waitFor();
+  await page.screenshot({ path: path.join(evidence, 'default-session-recovery-restored.png'), fullPage: true });
+  await context.addInitScript(
+    ({ origin, token }) => {
+      if (location.origin === origin) sessionStorage.setItem(`collective-session:${origin}`, token);
+    },
+    { origin: serviceUrl, token: seeded.owner.sessionToken },
+  );
   await page
     .getByRole('navigation', { name: '频道', exact: true })
     .getByRole('button', { name: /产品方向/ })

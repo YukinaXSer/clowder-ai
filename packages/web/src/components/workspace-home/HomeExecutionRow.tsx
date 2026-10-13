@@ -32,7 +32,7 @@ export function HomeExecutionRow({
   const isCommand = execution.kind === 'managed_command';
   const canInspect = isCommand || !!(onSelectExecution && execution.turnInvocationId);
   const activity = homeActivityLabel(execution.activity, rowWords.activity);
-  const status = isCommand ? rowWords.status.managed('', activity, '', '').trim() : rowWords.compact.working;
+  const status = isCommand ? rowWords.compact.managed(activity) : rowWords.compact.working;
   return (
     <article
       className="home-live-row"
@@ -51,10 +51,11 @@ export function HomeExecutionRow({
           </span>
           <span className="home-live-name text-compact">{catName}</span>
           <span className="home-live-status text-xs" data-tone={isCommand ? 'wait' : 'live'} title={status}>
+            <span className="home-execution-status-dot" aria-hidden="true" />
             <span className={isCommand ? 'home-execution-status-full' : undefined}>{status}</span>
             {isCommand && (
               <span className="home-execution-status-compact" aria-hidden="true">
-                {activity}
+                {status}
               </span>
             )}
           </span>

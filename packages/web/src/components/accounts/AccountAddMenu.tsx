@@ -1,8 +1,11 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { ProfileAuthType } from '../hub-accounts.types';
+import { useShellCopy } from '../shell/shell-copy';
+import { accountsCopy } from './accounts.shell-copy';
 
 export function AccountAddMenu({ onAdd }: { onAdd: (type: ProfileAuthType) => void }) {
+  const t = useShellCopy(accountsCopy);
   const [open, setOpen] = useState(false);
   const owner = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -32,20 +35,20 @@ export function AccountAddMenu({ onAdd }: { onAdd: (type: ProfileAuthType) => vo
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        + 添加账号
+        {t.add}
       </button>
       {open && (
         <div className="account-add-menu">
-          <p>用官方工具登录（OAuth）</p>
+          <p>{t.officialLogin}</p>
           <button type="button" onClick={() => choose('oauth')}>
-            Codex · 登录另一个账号
+            {t.addCodex}
           </button>
-          <small>本机默认登录不用添加。新增的号登录后不会自动换上。</small>
+          <small>{t.addNotice}</small>
           <hr />
           <button type="button" onClick={() => choose('api_key')}>
-            填一个 API 密钥
+            {t.addKey}
           </button>
-          <small>填地址和密钥，再选模型。</small>
+          <small>{t.addKeyHint}</small>
         </div>
       )}
     </div>

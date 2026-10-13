@@ -1,5 +1,8 @@
 'use client';
 import type { ProfileItem } from '../hub-accounts.types';
+import { useShellCopy } from '../shell/shell-copy';
+import { accountDisplayName } from './account-directory-view';
+import { accountsCopy } from './accounts.shell-copy';
 
 export function AccountRowMenu({
   account,
@@ -22,33 +25,34 @@ export function AccountRowMenu({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const t = useShellCopy(accountsCopy);
   const native = account.builtin && account.authType === 'oauth';
   return (
     <details className="account-menu">
-      <summary aria-label={`${account.displayName}更多操作`}>⋯</summary>
+      <summary aria-label={t.more(accountDisplayName(account, t))}>⋯</summary>
       <div>
         {native ? (
-          <p>这个号由官方工具管理。退出或换号请在原工具里做。</p>
+          <p>{t.nativeNotice}</p>
         ) : (
           <>
             <button type="button" disabled={busy} onClick={onRename}>
-              改备注
+              {t.rename}
             </button>
             {account.codex && (
               <button type="button" disabled={busy || !canRelogin} onClick={onRelogin}>
-                重新登录
+                {t.loginAgain}
               </button>
             )}
             {account.authType === 'api_key' && (
               <button type="button" disabled={busy} onClick={onEdit}>
-                编辑
+                {t.edit}
               </button>
             )}
             <button type="button" disabled={busy || used || memberCount > 0} onClick={onDelete}>
-              删除登记
+              {t.delete}
             </button>
-            {memberCount > 0 && <small>还有 {memberCount} 只猫在用，先换走</small>}
-            {used && !memberCount && <small>工具正在用这个号，先换走</small>}
+            {memberCount > 0 && <small>{t.boundDelete(memberCount)}</small>}
+            {used && !memberCount && <small>{t.usedDelete}</small>}
           </>
         )}
       </div>

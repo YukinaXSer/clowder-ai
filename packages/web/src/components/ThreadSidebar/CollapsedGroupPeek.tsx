@@ -3,6 +3,7 @@
 import { AppTooltip } from '../AppTooltip';
 import { useShellCopy } from '../shell/shell-copy';
 import type { GroupPeekProjection } from './collapsed-group-peek';
+import { sidebarStatusTextColor, ThreadSignalPills } from './ThreadRowSignals';
 import { threadSignalsCopy } from './thread-signals.shell-copy';
 
 /** A shortcut to existing conversation navigation while retaining the collapsed Group. */
@@ -27,7 +28,7 @@ export function CollapsedGroupPeek({
             ? copy.needsDecision
             : reason === 'mention'
               ? copy.mention
-              : copy.newReplies(member.unreadCount);
+              : `${member.unreadCount} ${copy.unreadBadge}`;
         return (
           <AppTooltip key={member.id} label={`${title} · ${label}`} side="right" intent="content">
             <button
@@ -46,16 +47,29 @@ export function CollapsedGroupPeek({
               <span className="min-w-0 flex-1 truncate" data-testid="group-peek-title">
                 {title}
               </span>
-              <span
-                className="inline-flex h-5 shrink-0 items-center rounded px-1 font-semibold"
-                style={{
-                  color: reason === 'decision' ? 'var(--semantic-warning)' : 'var(--shell-primary-text)',
-                  background: 'var(--shell-primary-soft)',
-                }}
-                data-testid="group-peek-label"
-              >
-                {label}
-              </span>
+              {reason === 'decision' ? (
+                <span
+                  className="inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap font-medium"
+                  style={{ color: sidebarStatusTextColor('warning') }}
+                  data-testid="group-peek-label"
+                >
+                  <span
+                    aria-hidden="true"
+                    data-testid="group-peek-decision-dot"
+                    className="h-2 w-2 flex-none rounded-full"
+                    style={{ background: 'var(--semantic-warning)' }}
+                  />
+                  {label}
+                </span>
+              ) : (
+                <div className="flex h-5 shrink-0 items-center" data-testid="group-peek-label">
+                  <ThreadSignalPills
+                    unreadCount={reason === 'unread' ? member.unreadCount : 0}
+                    hasUserMention={reason === 'mention'}
+                    testIdPrefix="group-peek"
+                  />
+                </div>
+              )}
             </button>
           </AppTooltip>
         );

@@ -84,21 +84,15 @@ export const homeCopy = defineShellCopy(
         changedFiles: (count: number) => `${count} 个文件`,
         noMatch: '没有找到匹配的内容',
         // Only places verified reachable in the new shell (headers, mailbox, settings), not the design's wishful sentence.
-        signpost: '任务和作品在对话顶栏；审批和待处理在窄栏的待办；调度、能力进化、社区在设置与管理。',
+        signpost: '任务和作品在对话顶栏；审批和需要我处理在待办；成员、账户和配置在设置与管理。',
         // Two entries whose final homes are not wired yet (north-star §1.8, 10-03): each says where it belongs and, until
         // that is connected, opens from here. The link ends the sentence in both languages, so `tail` is the full stop.
         transitional: {
           allWork: {
-            lead: '日程入口将移入待办，接上之前先',
+            lead: '日程也可从待办打开；',
             link: '从这里打开',
             tail: '。',
             openLabel: '打开日程',
-          },
-          capabilityEvolution: {
-            lead: '能力进化在设置与管理；直达入口接上之前先',
-            link: '从这里打开',
-            tail: '。',
-            openLabel: '打开能力进化',
           },
         },
         // The words of the workspace-search dropdown under the field (the component has classic defaults; this overrides them).
@@ -130,6 +124,10 @@ export const homeCopy = defineShellCopy(
         voice: { label: '语音与会议', description: '语音转写、会议记录' },
         films: { label: '片子', description: '已有视频项目与制作' },
         team: { label: '猫猫团队', description: '成员能力与协作状态' },
+        schedule: { label: '调度', description: '定时任务与下一次运行' },
+        eval: { label: '评估', description: '周期评估、结论与台账' },
+        community: { label: '社区', description: '社区事项与贡献记录' },
+        'capability-evolution': { label: '能力进化', description: '正在改进的能力与项目' },
       },
       // "How long": a duration after 已等待, and "how long ago" after 观察于. English says the whole word and counts it.
       time: {
@@ -207,19 +205,13 @@ export const homeCopy = defineShellCopy(
         changedFiles: (count: number) => (count === 1 ? '1 file' : `${count} files`),
         noMatch: 'No matches',
         signpost:
-          'Tasks and works are in the conversation header; approvals and pending items are in To-do; scheduling, capability evolution and community are in Settings.',
+          'Tasks and works are in the conversation header; approvals and items needing you are in To-do; members, accounts and configuration are in Settings.',
         transitional: {
           allWork: {
-            lead: 'Work handed to cats will move to To-do › Schedule. Until then, ',
+            lead: 'Schedule is also in To-do; ',
             link: 'open it here',
             tail: '.',
             openLabel: 'Open Schedule',
-          },
-          capabilityEvolution: {
-            lead: 'Capability evolution is in Settings. Until its direct link is ready, ',
-            link: 'open it here',
-            tail: '.',
-            openLabel: 'Open Capability evolution',
           },
         },
         search: {
@@ -248,6 +240,13 @@ export const homeCopy = defineShellCopy(
         voice: { label: 'Voice & meetings', description: 'Voice transcription and meeting notes' },
         films: { label: 'Films', description: 'Existing video projects and production' },
         team: { label: 'Cat team', description: 'Member capabilities and collaboration' },
+        schedule: { label: 'Scheduling', description: 'Scheduled tasks and their next run' },
+        eval: { label: 'Evaluations', description: 'Periodic checks, results and ledger' },
+        community: { label: 'Community', description: 'Community work and contributions' },
+        'capability-evolution': {
+          label: 'Capability evolution',
+          description: 'Capabilities and projects being improved',
+        },
       },
       time: {
         justNow: 'just now',

@@ -309,6 +309,7 @@ test(
             'channel',
             'topic',
             'refresh',
+            'runtime-restart-session-recovery',
             'member',
             'mobile',
             'dark',

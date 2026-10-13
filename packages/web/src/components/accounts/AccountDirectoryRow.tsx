@@ -4,9 +4,13 @@ import { AvatarImageWithFallback } from '../AvatarImageWithFallback';
 import { accountRequest } from '../codex-accounts/account-request';
 import { CodexQuotaControl } from '../codex-accounts/CodexQuotaControl';
 import type { AccountMember, ProfileItem } from '../hub-accounts.types';
+import { useShellCopy } from '../shell/shell-copy';
+import { useShellLanguage } from '../shell/shell-language';
 import { useConfirm } from '../useConfirm';
 import { AccountRowMenu } from './AccountRowMenu';
-import { accountStatus } from './account-directory-view';
+import { accountDisplayName, accountStatus } from './account-directory-view';
+import { accountMessage } from './account-message';
+import { accountsCopy } from './accounts.shell-copy';
 
 export function AccountDirectoryRow({
   account,
@@ -31,13 +35,16 @@ export function AccountDirectoryRow({
   onEdit: (profile: ProfileItem) => void;
   actionError?: string;
 }) {
+  const t = useShellCopy(accountsCopy);
+  const language = useShellLanguage();
+  const displayName = accountDisplayName(account, t);
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState(account.displayName);
-  const status = accountStatus(account);
+  const status = accountStatus(account, t, language);
   const attempt = account.codex?.attempt;
   const waiting = ['preparing', 'queued', 'waiting'].includes(attempt?.state ?? '');
   const review = attempt?.state === 'review';
@@ -67,10 +74,11 @@ export function AccountDirectoryRow({
     if (
       !focusRef &&
       !(await confirm({
-        title: '删除登记',
+        title: t.delete,
         variant: 'danger',
-        confirmLabel: '删除登记',
-        message: `删除「${account.displayName}」？只删这里的登记，不会注销官方账号。`,
+        confirmLabel: t.delete,
+        cancelLabel: t.cancel,
+        message: t.deleteMessage(displayName),
       }))
     )
       return;
@@ -110,13 +118,13 @@ export function AccountDirectoryRow({
     }
   }
   const action = review
-    ? '去处理'
+    ? 'handle'
     : waiting
-      ? '取消'
+      ? 'cancel'
       : account.codex && (failed || !status.ready)
-        ? '重试'
+        ? 'retry'
         : status.ready && !used
-          ? '换成这个'
+          ? 'switch'
           : '';
   return (
     <Fragment>
@@ -124,13 +132,13 @@ export function AccountDirectoryRow({
         <td className="account-provider">{provider}</td>
         <td>
           <button type="button" className="account-name" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {account.displayName}
+            {displayName}
           </button>
           <small>
             {native
               ? account.nativeLogin?.officialDefault === false
                 ? account.nativeLogin.home
-                : '本机默认登录，归原工具管理'
+                : t.nativeManaged
               : (account.codex?.identity?.email ?? account.baseUrl ?? '')}
           </small>
         </td>
@@ -140,8 +148,8 @@ export function AccountDirectoryRow({
         </td>
         <td>
           <div className="account-followers">
-            {used && <span className="account-used">正在用</span>}
-            {!used && active.some((m) => m.bindingMode === 'override') && <span>单独指定</span>}
+            {used && <span className="account-used">{t.inUse}</span>}
+            {!used && active.some((m) => m.bindingMode === 'override') && <span>{t.override}</span>}
             {active.slice(0, 5).map((m) => (
               <AvatarImageWithFallback
                 key={m.id}
@@ -150,7 +158,7 @@ export function AccountDirectoryRow({
                 className="account-avatar"
               />
             ))}
-            <span>{active.length ? `${active.length} 只猫` : '—'}</span>
+            <span>{active.length ? t.memberCount(active.length) : '—'}</span>
           </div>
         </td>
         <td>
@@ -165,12 +173,12 @@ export function AccountDirectoryRow({
                     ? setOpen(true)
                     : waiting
                       ? void login('cancel')
-                      : action === '重试'
+                      : action === 'retry'
                         ? void login('start')
                         : onSwitch(account)
                 }
               >
-                {action}
+                {t[action]}
               </button>
             )}
             <AccountRowMenu
@@ -191,7 +199,7 @@ export function AccountDirectoryRow({
             <button
               type="button"
               className="account-expand"
-              aria-label={`展开${account.displayName}`}
+              aria-label={t.expand(displayName)}
               aria-expanded={open}
               onClick={() => setOpen(!open)}
             >
@@ -203,7 +211,7 @@ export function AccountDirectoryRow({
       {(open || error || actionError) && (
         <tr className="account-expanded">
           <td colSpan={5}>
-            {(error || actionError) && <p role="alert">{error || actionError}</p>}
+            {(error || actionError) && <p role="alert">{error ? accountMessage(error, language) : actionError}</p>}
             {open && (
               <div className="account-details">
                 {editing && (
@@ -214,75 +222,71 @@ export function AccountDirectoryRow({
                     }}
                   >
                     <input
-                      aria-label="修改账号备注"
+                      aria-label={t.renameLabel}
                       maxLength={200}
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                     />
                     <button type="submit" className="account-button" disabled={busy}>
-                      保存
+                      {t.save}
                     </button>
                     <button type="button" className="account-button" onClick={() => setEditing(false)}>
-                      取消
+                      {t.cancel}
                     </button>
                   </form>
                 )}
-                <p>用这个号的猫：{active.map((m) => m.name).join('、') || '没有'}。云端 Pro 不跟本机换号。</p>
-                {active.some((m) => m.bindingMode === 'override') && <p>单独指定的猫在成员详情里改。</p>}
+                <p>{t.followers(active.map((m) => m.name).join(language === 'zh' ? '、' : ', ') || t.none)}</p>
+                {active.some((m) => m.bindingMode === 'override') && <p>{t.overrideNotice}</p>}
                 {review && (
                   <div className="account-identity-review">
                     {attempt?.duplicateAccountRef && !duplicate ? (
                       <>
-                        <p>已有账号暂时读不到。登记和绑定保持原样，请取消这次登录后核对已有账号。</p>
+                        <p>{t.duplicateMissing}</p>
                         <button
                           type="button"
                           className="account-button"
                           disabled={busy}
                           onClick={() => void login('cancel')}
                         >
-                          放弃这次登录
+                          {t.abandonLogin}
                         </button>
                       </>
                     ) : duplicate && !account.codex?.identity ? (
                       <>
-                        <p>登录的是列表里已有的「{duplicate.displayName}」，这一条登记是多余的。</p>
+                        <p>{t.duplicate(accountDisplayName(duplicate, t))}</p>
                         <button
                           type="button"
                           className="account-button"
                           disabled={busy || members.length > 0}
                           onClick={() => void remove(duplicate.id)}
                         >
-                          删掉这条，回到{duplicate.displayName}
+                          {t.returnTo(accountDisplayName(duplicate, t))}
                         </button>
                         <button type="button" className="account-button" onClick={() => setOpen(false)}>
-                          先留着
+                          {t.keep}
                         </button>
                       </>
                     ) : (
                       <>
-                        <p>
-                          这次登进的是另一个号（{attempt?.identity?.email ?? '官方身份'}）。原来的号和跟着它的猫都没动。
-                        </p>
+                        <p>{t.newIdentity(attempt?.identity?.email ?? t.officialIdentity)}</p>
                         {!duplicate && (
                           <button
                             type="button"
                             className="account-button"
                             disabled={busy}
-                            onClick={() =>
-                              void login('create-new', { displayName: `${account.displayName}（新账号）` })
-                            }
+                            onClick={() => void login('create-new', { displayName: t.newName(account.displayName) })}
                           >
-                            另存为新号
+                            {t.saveNew}
                           </button>
                         )}
-                        {duplicate && <p>这个身份已在「{duplicate.displayName}」登记，可放弃这次登录后选择它。</p>}
+                        {duplicate && <p>{t.identityExists(accountDisplayName(duplicate, t))}</p>}
                         <button
                           type="button"
                           className="account-button"
                           disabled={busy}
                           onClick={() => void login('cancel')}
                         >
-                          放弃这次登录
+                          {t.abandonLogin}
                         </button>
                       </>
                     )}
@@ -298,17 +302,20 @@ export function AccountDirectoryRow({
                   />
                 )}
                 {account.authType === 'api_key' ? (
-                  <p>余额请到服务商那里看。</p>
+                  <p>{t.providerBalance}</p>
                 ) : account.clientId === 'openai' && !status.ready ? (
-                  <p>这个号查不了额度。</p>
+                  <p>{t.noQuota}</p>
                 ) : null}
                 {(account.codex || account.nativeLogin) && (
                   <details>
-                    <summary>登录信息</summary>
-                    <p>登录目录：{account.codex?.credentialHome ?? account.nativeLogin?.home}</p>
+                    <summary>{t.loginDetails}</summary>
+                    <p>
+                      {t.loginDirectory}: {account.codex?.credentialHome ?? account.nativeLogin?.home}
+                    </p>
                     {(account.codex?.identity?.workspaceId ?? account.nativeLogin?.identity?.workspaceId) && (
                       <p>
-                        工作区 ID：{account.codex?.identity?.workspaceId ?? account.nativeLogin?.identity?.workspaceId}
+                        {t.workspaceId}:{' '}
+                        {account.codex?.identity?.workspaceId ?? account.nativeLogin?.identity?.workspaceId}
                       </p>
                     )}
                   </details>

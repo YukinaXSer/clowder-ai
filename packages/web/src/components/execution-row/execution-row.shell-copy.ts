@@ -24,6 +24,7 @@ export const executionRowCopy = defineShellCopy(
       },
       compact: {
         working: '正在回话',
+        managed: (activity: string): string => `在跑${activity}`,
         stopping: '正在停止',
         silent: '没动静',
         confirming: '正在确认',
@@ -99,6 +100,7 @@ export const executionRowCopy = defineShellCopy(
       },
       compact: {
         working: 'Replying',
+        managed: (activity: string): string => `Running ${activity.toLowerCase()}`,
         stopping: 'Stopping',
         silent: 'Quiet',
         confirming: 'Checking',
@@ -181,6 +183,7 @@ export const executionRowCopy = defineShellCopy(
         [4, ' · queue paused'],
       ],
       'compact.waiting': [[1], [12]],
+      'compact.managed': [['Tests'], ['Build']],
       'status.stuck': [
         [1, ''],
         [3, ' · 2 queued'],

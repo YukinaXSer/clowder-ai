@@ -176,12 +176,7 @@ export function HomeTools({
             <p>{t.tools.signpost}</p>
             <TransitionalLink
               copy={t.tools.transitional.allWork}
-              destination={HOME_TRANSITIONAL_DESTINATIONS.allWork}
-              onSelect={onSelectDestination}
-            />
-            <TransitionalLink
-              copy={t.tools.transitional.capabilityEvolution}
-              destination={HOME_TRANSITIONAL_DESTINATIONS.capabilityEvolution}
+              destination={{ ...HOME_TRANSITIONAL_DESTINATIONS.allWork, label: t.tools.transitional.allWork.openLabel }}
               onSelect={onSelectDestination}
             />
           </div>

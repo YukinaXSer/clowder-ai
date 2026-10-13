@@ -2,10 +2,12 @@ import { builtinAccountIdForClient, type ClientId } from '@cat-cafe/shared';
 import type { CatData } from '@/hooks/useCatData';
 import type { AccountMember, AccountSelection, ProfileItem } from '../hub-accounts.types';
 import { builtinClientLabel } from '../hub-accounts.view';
+import { accountMessage } from './account-message';
+import { accountsCopy } from './accounts.shell-copy';
 
-export function accountProvider(account: ProfileItem): string {
+export function accountProvider(account: ProfileItem, t = accountsCopy.zh): string {
   if (account.authType === 'oauth') return builtinClientLabel(account.clientId);
-  if (!account.baseUrl) return account.clientId ? builtinClientLabel(account.clientId) : '自定义地址';
+  if (!account.baseUrl) return account.clientId ? builtinClientLabel(account.clientId) : t.customProvider;
   try {
     const host = new URL(account.baseUrl).hostname;
     const providers: Array<[string, string]> = [
@@ -19,9 +21,9 @@ export function accountProvider(account: ProfileItem): string {
       ['deepseek.com', 'DeepSeek'],
       ['openrouter.ai', 'OpenRouter'],
     ];
-    return providers.find(([domain]) => host === domain || host.endsWith(`.${domain}`))?.[1] ?? '自定义地址';
+    return providers.find(([domain]) => host === domain || host.endsWith(`.${domain}`))?.[1] ?? t.customProvider;
   } catch {
-    return '自定义地址';
+    return t.customProvider;
   }
 }
 export function accountMembers(account: ProfileItem, cats: CatData[], selection?: AccountSelection): AccountMember[] {
@@ -56,20 +58,31 @@ export function accountIsSelected(account: ProfileItem, cats: CatData[], selecti
 export function accountLoginReady(account: ProfileItem) {
   return account.codex ? account.codex.status === 'ready' : account.codexLoginStatus === 'ready';
 }
-export function accountStatus(account: ProfileItem) {
+export function accountStatus(account: ProfileItem, t = accountsCopy.zh, language: 'zh' | 'en' = 'zh') {
   if (account.authType === 'api_key')
-    return { label: account.hasApiKey ? '密钥已填' : '没填密钥', detail: '', ready: false };
+    return { label: account.hasApiKey ? t.keyReady : t.keyMissing, detail: '', ready: false };
   const attempt = account.codex?.attempt;
   const ready = accountLoginReady(account);
   const waiting = ['preparing', 'queued', 'waiting'].includes(attempt?.state ?? '');
   let detail = account.nativeLogin?.identity?.email ?? '';
-  if (waiting) detail = attempt?.state === 'waiting' ? '终端已打开，请在终端里完成授权' : '正在准备官方终端登录';
-  else if (attempt?.state === 'review') detail = '请确认这次登录的身份';
-  else if (attempt?.error) detail = `${ready ? '上次重新登录没成功：' : ''}${attempt.error}`;
-  else if (attempt?.state === 'canceled') detail = '已取消这次登录';
+  if (waiting) detail = attempt?.state === 'waiting' ? t.awaitTerminal : t.preparingLogin;
+  else if (attempt?.state === 'review') detail = t.reviewIdentity;
+  else if (attempt?.error)
+    detail = ready
+      ? t.previousLoginFailed(accountMessage(attempt.error, language))
+      : accountMessage(attempt.error, language);
+  else if (attempt?.state === 'canceled') detail = t.canceledLogin;
   const unreadable =
     account.codexLoginStatus === 'unreadable' ||
     account.codex?.status === 'identity_changed' ||
     (!account.codex && !account.codexLoginStatus);
-  return { label: ready ? '已登录' : waiting ? '等待登录' : unreadable ? '读不到' : '没登录', detail, ready };
+  return { label: ready ? t.loggedIn : waiting ? t.waiting : unreadable ? t.unreadable : t.notLoggedIn, detail, ready };
+}
+
+/** Translate product default names only; notes, emails and tool names remain user data. */
+export function accountDisplayName(account: ProfileItem, t = accountsCopy.zh): string {
+  if (!account.builtin) return account.displayName;
+  if (account.displayName === 'Codex App 登录（本机默认）') return t.codexAppName;
+  if (account.displayName === '本机默认登录') return t.nativeName;
+  return account.displayName;
 }

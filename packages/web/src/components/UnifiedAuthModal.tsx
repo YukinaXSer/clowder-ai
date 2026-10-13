@@ -4,10 +4,14 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { apiFetch } from '@/utils/api-client';
 import { AccountConnectionFields, isValidAccountEnvKey } from './AccountConnectionFields';
+import { accountFormCopy } from './accounts/account-form.shell-copy';
+import { accountMessage } from './accounts/account-message';
 import { startCreatedCodexAccountLogin } from './codex-accounts/account-request';
 import type { BuiltinAccountClient, ProfileAuthType, ProfileItem } from './hub-accounts.types';
 import { builtinClientLabel } from './hub-accounts.view';
 import { formInputClass } from './mcp-form-helpers';
+import { useShellCopy } from './shell/shell-copy';
+import { useShellLanguage } from './shell/shell-language';
 
 const CLIENT_OPTIONS: BuiltinAccountClient[] = ['anthropic', 'openai', 'google', 'kimi', 'opencode', 'acp'];
 
@@ -41,6 +45,8 @@ export function UnifiedAuthModal({
   initialClientId,
   initialAuthType,
 }: UnifiedAuthModalProps) {
+  const t = useShellCopy(accountFormCopy);
+  const language = useShellLanguage();
   const isEdit = Boolean(editProfile);
   const defaultClientId =
     editProfile?.clientId ?? initialClientId ?? (editProfile?.authType === 'api_key' ? undefined : 'openai');
@@ -151,7 +157,7 @@ export function UnifiedAuthModal({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            displayName: displayName.trim(),
+            displayName: displayName.trim() || (isCodexLogin ? t.codexDefaultName : ''),
             authType: 'oauth',
             clientId: effectiveClientId,
             ...(!isCodexLogin && models.length > 0 ? { models } : {}),
@@ -214,12 +220,12 @@ export function UnifiedAuthModal({
       >
         {/* Header */}
         <div className="mb-1 flex items-center justify-between">
-          <h3 className="font-semibold text-cafe-primary">{isEdit ? '编辑账号' : '添加账号'}</h3>
+          <h3 className="font-semibold text-cafe-primary">{isEdit ? t.edit : t.add}</h3>
           <button
             type="button"
             onClick={handleClose}
             className="rounded-full p-1 text-cafe-muted hover:bg-[var(--console-hover-bg)] hover:text-cafe-secondary"
-            aria-label="关闭"
+            aria-label={t.close}
           >
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -244,7 +250,7 @@ export function UnifiedAuthModal({
             } ${isEdit ? 'cursor-not-allowed' : !isOAuth ? 'hover:bg-[var(--console-hover-bg)]' : ''}`}
             disabled={isEdit}
           >
-            账号登录
+            {t.login}
           </button>
           <button
             type="button"
@@ -262,13 +268,13 @@ export function UnifiedAuthModal({
           {/* 账号名称 — always shown */}
           <div>
             <label className="mb-1 block text-xs font-medium text-cafe-secondary">
-              {isCodexLogin && !isEdit ? '备注名（可不填）' : '账号名称'}
+              {isCodexLogin && !isEdit ? t.noteOptional : t.name}
             </label>
             <input
-              aria-label={isCodexLogin ? '账号备注' : '账号名称'}
+              aria-label={isCodexLogin ? t.note : t.name}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder={isCodexLogin ? '例如：公司、私人' : '例如: my-claude-account'}
+              placeholder={isCodexLogin ? t.noteHint : t.nameHint}
               className={formInputClass}
             />
           </div>
@@ -276,20 +282,20 @@ export function UnifiedAuthModal({
           {/* Authentication mode does not erase account identity. */}
           <div>
             <label className="mb-1 block text-xs font-medium text-cafe-secondary">
-              {isOAuth ? '厂商' : 'API Key 归属'}
+              {isOAuth ? t.provider : t.keyOwner}
             </label>
             {initialClientId ? (
               <p className={formInputClass}>{builtinClientLabel(initialClientId)}</p>
             ) : (
               <select
-                aria-label={isOAuth ? '厂商' : 'API Key 归属'}
+                aria-label={isOAuth ? t.provider : t.keyOwner}
                 value={clientId ?? ''}
                 onChange={(e) => setClientId(e.target.value as BuiltinAccountClient)}
                 className={formInputClass}
               >
                 {!clientId && (
                   <option value="" disabled>
-                    请选择账户归属
+                    {t.chooseProvider}
                   </option>
                 )}
                 {(isOAuth && !isEdit ? ['openai' as const] : CLIENT_OPTIONS).map((c) => (
@@ -301,12 +307,9 @@ export function UnifiedAuthModal({
             )}
           </div>
 
-          {isCodexLogin && !isEdit && (
-            <p className="text-sm text-cafe-muted">
-              创建后会打开终端运行官方 codex login。请在浏览器亲自完成授权；失败可在同一账号条目重试。
-            </p>
-          )}
+          {isCodexLogin && !isEdit && <p className="text-sm text-cafe-muted">{t.loginHint}</p>}
 
+          {!isEdit && <p className="text-sm text-cafe-muted">{t.bindingsHint}</p>}
           <AccountConnectionFields
             isOAuth={isOAuth}
             isCodexLogin={isCodexLogin}
@@ -327,7 +330,7 @@ export function UnifiedAuthModal({
           />
         </div>
 
-        {error && <p className="mt-3 text-xs text-semantic-critical">{error}</p>}
+        {error && <p className="mt-3 text-xs text-semantic-critical">{accountMessage(error, language)}</p>}
 
         {/* Save button — bottom right */}
         <div className="mt-4 flex justify-end">
@@ -338,7 +341,7 @@ export function UnifiedAuthModal({
             disabled={saving || !canSubmit}
             className="rounded-lg bg-cafe-accent px-5 py-2 text-sm font-semibold text-[var(--cafe-surface)] transition hover:bg-cafe-accent-hover disabled:opacity-50"
           >
-            {saving ? '处理中…' : isCodexLogin && !isEdit ? '创建并开始登录' : '保存'}
+            {saving ? t.processing : isCodexLogin && !isEdit ? t.createLogin : t.save}
           </button>
         </div>
       </div>

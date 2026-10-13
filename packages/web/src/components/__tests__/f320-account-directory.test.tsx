@@ -78,7 +78,7 @@ it('shows one OAuth table, distinguishes logged-in backup from the used default,
   expect(host.querySelector('[data-account-id="backup"]')?.textContent).not.toContain('正在用');
   expect(host.textContent).not.toContain('当前绑定');
   expect(host.querySelectorAll('table')).toHaveLength(1);
-  const search = host.querySelector<HTMLInputElement>('input[aria-label="搜索账号"]')!;
+  const search = host.querySelector<HTMLInputElement>('input[aria-label="搜索账户或成员"]')!;
   expect(search).not.toBeNull();
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, '小太阳');

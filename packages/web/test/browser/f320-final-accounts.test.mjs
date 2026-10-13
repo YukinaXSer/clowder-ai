@@ -36,7 +36,7 @@ test(
     page.on('pageerror', (e) => errors.push(e.message));
     try {
       await page.goto(`${preview.url}/settings?s=accounts&shell=v2`, { waitUntil: 'domcontentloaded' });
-      const list = page.getByRole('group', { name: 'Account List', exact: true });
+      const list = page.getByRole('group', { name: '账号列表', exact: true });
       const native = page.locator('[data-account-id="codex"]');
       await native.getByText('Codex App 登录（本机默认）', { exact: true }).waitFor();
       await native.getByText('正在用', { exact: true }).waitFor();
@@ -109,9 +109,9 @@ test(
       }
       await page.reload();
       await row.getByText('正在用', { exact: true }).waitFor();
-      await page.getByRole('searchbox', { name: '搜索账号' }).fill('codex61-sol');
+      await page.getByRole('searchbox', { name: '搜索账户或成员' }).fill('codex61-sol');
       assert.equal(await list.locator('[data-account-id]').count(), 1);
-      await page.getByRole('searchbox', { name: '搜索账号' }).fill('');
+      await page.getByRole('searchbox', { name: '搜索账户或成员' }).fill('');
       await page.goto(`${preview.url}/settings?s=members&shell=v2`, { waitUntil: 'domcontentloaded' });
       const member = page.getByTestId('member-account-codex61-sol');
       await member.getByText('号：主号', { exact: true }).waitFor();

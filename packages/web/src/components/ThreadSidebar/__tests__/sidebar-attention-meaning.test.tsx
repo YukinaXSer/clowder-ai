@@ -105,7 +105,7 @@ it.each([
   expect(summary()?.querySelector('[data-testid="group-replied-cat"]')).not.toBeNull();
   expect(shortcut()?.getAttribute('data-peek-reason')).toBe('unread');
   expect(shortcut()?.querySelector('[data-testid="group-peek-label"]')?.textContent).toBe(
-    language === 'zh' ? '12 条新' : '12 new',
+    language === 'zh' ? '12 未读' : '12 unread',
   );
   preferences(true);
   harness.cleanup();

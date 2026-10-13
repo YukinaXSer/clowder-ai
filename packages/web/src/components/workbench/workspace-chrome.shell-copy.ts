@@ -21,6 +21,12 @@ export const workspaceChromeCopy = defineShellCopy(
         trajectory: '轨迹',
         eval: '评估',
       },
+      // Words for the voice destination surface (host:voice) — audit row44: the tab and the surface chrome
+      // follow the shell language at display time. Mirrors homeCopy.rows.voice (same surface, same words).
+      voiceSurface: {
+        label: '语音与会议',
+        description: '语音转写、会议记录',
+      },
       toolsSearch: '工具搜索',
       searchOriginUnavailable: '当前搜索来源已失效，请重新打开工具搜索。',
       focusCurrent: '专注当前工具',
@@ -79,6 +85,10 @@ export const workspaceChromeCopy = defineShellCopy(
         approval: 'Approvals',
         trajectory: 'Trajectory',
         eval: 'Evaluation',
+      },
+      voiceSurface: {
+        label: 'Voice & meetings',
+        description: 'Voice transcription and meeting notes',
       },
       toolsSearch: 'Tool search',
       searchOriginUnavailable: 'This search origin is no longer available. Open tool search again.',

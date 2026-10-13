@@ -2,6 +2,11 @@
 import { useEffect, useState } from 'react';
 import { accountRequest } from '../codex-accounts/account-request';
 import type { AccountSelection, ProfileItem } from '../hub-accounts.types';
+import { useShellCopy } from '../shell/shell-copy';
+import { useShellLanguage } from '../shell/shell-language';
+import { accountDisplayName } from './account-directory-view';
+import { accountMessage } from './account-message';
+import { accountsCopy } from './accounts.shell-copy';
 
 interface Preview {
   previewToken: string;
@@ -19,6 +24,8 @@ export function AccountSwitchConfirm({
   onClose: () => void;
   onChanged: (selection: AccountSelection) => void;
 }) {
+  const t = useShellCopy(accountsCopy);
+  const language = useShellLanguage();
   const [includeOverrides, setIncludeOverrides] = useState(false);
   const [preview, setPreview] = useState<Preview>();
   const [error, setError] = useState('');
@@ -63,24 +70,26 @@ export function AccountSwitchConfirm({
     }
   }
   return (
-    <section className="account-switch-confirm" aria-label="换号确认">
-      <h3>换成「{account.displayName}」</h3>
-      <p>从下一次调用起生效。正在进行的调用继续用旧号，原会话和历史记录保留。</p>
-      <p>本机默认登录不受影响，可随时在账号列表换回来。云端 Pro 不跟着换。</p>
-      {error && <p role="alert">{error}</p>}
+    <section className="account-switch-confirm" aria-label={t.switchTitle}>
+      <h3>{t.switchName(accountDisplayName(account, t))}</h3>
+      <p>{t.switchTiming}</p>
+      <p>{t.switchNative}</p>
+      {error && <p role="alert">{accountMessage(error, language)}</p>}
       {preview ? (
         <>
-          <p>会跟着换的 {preview.targets.length} 只：</p>
-          <p>{preview.targets.map((m) => m.name).join('、') || '没有成员；只设定这一家正在用的账号'}</p>
+          <p>{t.switchCount(preview.targets.length)}</p>
+          <p>{preview.targets.map((m) => m.name).join(language === 'zh' ? '、' : ', ') || t.noTargets}</p>
           {preview.exceptions.length > 0 && (
             <div>
               <p>
-                现在用别的号的 {preview.exceptions.length} 只：
-                {preview.exceptions
-                  .map((m) => `${m.name}（${m.previousAccountName ?? m.previousAccountRef}）`)
-                  .join('、')}
+                {t.exceptionCount(
+                  preview.exceptions.length,
+                  preview.exceptions
+                    .map((m) => `${m.name}（${m.previousAccountName ?? m.previousAccountRef}）`)
+                    .join(language === 'zh' ? '、' : ', '),
+                )}
               </p>
-              <p>这些猫保留原号，记为单独指定。</p>
+              <p>{t.keepExceptions}</p>
             </div>
           )}
           {(preview.exceptions.length > 0 || includeOverrides) && (
@@ -92,20 +101,20 @@ export function AccountSwitchConfirm({
                   disabled={busy}
                   onChange={(e) => setIncludeOverrides(e.target.checked)}
                 />
-                也一起换
+                {t.includeOverrides}
               </label>
-              {includeOverrides && <p>例外已纳入上方换号名单；取消勾选可保留它们原来的账号。</p>}
+              {includeOverrides && <p>{t.includedHint}</p>}
             </div>
           )}
           <button type="button" className="account-primary" disabled={busy} onClick={() => void commit()}>
-            确认换号
+            {t.confirmSwitch}
           </button>
         </>
       ) : (
-        !error && <p>正在读取影响名单…</p>
+        !error && <p>{t.readingTargets}</p>
       )}
       <button type="button" className="account-button" disabled={busy} onClick={onClose}>
-        取消
+        {t.cancel}
       </button>
     </section>
   );

@@ -84,3 +84,24 @@ it('keeps unavailable ownership visible and allows a new genuine retry', async (
   expect(opened).toHaveBeenCalledTimes(1);
   expect(container.textContent).toBe('');
 });
+
+it('voice surface title and context follow the shell language (audit row 44)', async () => {
+  const { writeShellLanguage } = await import('@/components/shell/shell-language');
+  const { writeShellPresentation } = await import('@/components/shell/shell-presentation');
+  writeShellPresentation('v2');
+  writeShellLanguage('en');
+  await render('A', 'work-a', false);
+  await act(async () => admission.onSelectDestination(canonicalLauncherDestination('host', 'voice')));
+  expect(opened).toHaveBeenCalledTimes(1);
+  const enSurface = opened.mock.calls[0][0] as { title: string; context?: string };
+  expect(enSurface.title).toBe('Voice & meetings');
+  expect(enSurface.context).toBe('Voice transcription and meeting notes');
+  await act(async () => {
+    writeShellLanguage('zh');
+  });
+  await act(async () => admission.onSelectDestination(canonicalLauncherDestination('host', 'voice')));
+  expect(opened).toHaveBeenCalledTimes(2);
+  const zhSurface = opened.mock.calls[1][0] as { title: string; context?: string };
+  expect(zhSurface.title).toBe('语音与会议');
+  expect(zhSurface.context).toBe('语音转写、会议记录');
+});

@@ -52,6 +52,42 @@ export async function runGroupPeekJourney(t, browser) {
             'mention',
             'unread',
           ]);
+          const unreadThreadId = await rows.last().getAttribute('data-thread-id');
+          const unreadCount = api.threads.find((thread) => thread.id === unreadThreadId).unreadCount;
+          assert.deepEqual(
+            await rows.getByTestId('group-peek-label').allTextContents(),
+            language === 'zh'
+              ? ['等你决定', '@你', `${unreadCount} 未读`]
+              : ['To decide', '@you', `${unreadCount} unread`],
+          );
+          const contrast = await group
+            .getByTestId('group-peek-label')
+            .first()
+            .evaluate((label) => {
+              const context = document.createElement('canvas').getContext('2d');
+              const color = (value) => {
+                context.clearRect(0, 0, 1, 1);
+                context.fillStyle = value;
+                context.fillRect(0, 0, 1, 1);
+                return [...context.getImageData(0, 0, 1, 1).data];
+              };
+              const luminance = (rgb) =>
+                rgb
+                  .slice(0, 3)
+                  .map((v) => {
+                    const s = v / 255;
+                    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+                  })
+                  .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+              let parent = label.parentElement;
+              while (parent && color(getComputedStyle(parent).backgroundColor)[3] === 0) parent = parent.parentElement;
+              const foreground = color(getComputedStyle(label).color);
+              const background = color(getComputedStyle(parent).backgroundColor);
+              const a = luminance(foreground),
+                b = luminance(background);
+              return { foreground, background, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+            });
+          assert.ok(contrast.ratio >= 4.5, `decision text contrast ${JSON.stringify(contrast)}`);
           assert.equal(
             await group.getByTestId('group-count').textContent(),
             language === 'zh' ? '5 条要看' : '5 to see',
@@ -99,6 +135,9 @@ export async function runGroupPeekJourney(t, browser) {
                     !i || entry.getBoundingClientRect().top >= entries[i - 1].getBoundingClientRect().bottom,
                 ),
                 accessible: entries.every((entry) => entry.getAttribute('aria-label').includes(' · ')),
+                titlesHaveWidth: entries.every(
+                  (entry) => entry.querySelector('[data-testid="group-peek-title"]').getBoundingClientRect().width > 0,
+                ),
               };
             });
             if (!geometry.noOverflow) {
@@ -142,6 +181,7 @@ export async function runGroupPeekJourney(t, browser) {
               contained: true,
               distinct: true,
               accessible: true,
+              titlesHaveWidth: true,
             });
             measurements.push({ width, ...geometry });
           }

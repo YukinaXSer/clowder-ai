@@ -4,6 +4,7 @@ import { useLabelStore } from '@/stores/label-store';
 import { writeShellLanguage } from '../../shell/shell-language';
 import { writeShellPresentation } from '../../shell/shell-presentation';
 import { SIDEBAR_TAB_STORAGE_KEY } from '../sidebar-tab-state';
+import { sidebarStatusTextColor } from '../ThreadRowSignals';
 import {
   createThreadSidebarHarness,
   defaultSidebarApiMock,
@@ -127,6 +128,38 @@ describe('collapsed production Group attention shortcuts', () => {
     );
     expect(header()?.getAttribute('data-expanded')).toBe('true');
     expect(ids()).toHaveLength(0);
+  });
+  it.each([
+    'zh',
+    'en',
+  ] as const)('shares conversation attention badges and decision status meaning in %s', async (language) => {
+    writeShellLanguage(language);
+    setup(5);
+    await harness.render();
+    const decision = harness.container.querySelector<HTMLElement>(
+      '[data-peek-reason="decision"] [data-testid="group-peek-label"]',
+    );
+    expect(decision?.textContent).toBe(language === 'zh' ? '等你决定' : 'To decide');
+    expect(decision?.style.background).toBe('');
+    expect(decision?.style.color).toBe(sidebarStatusTextColor('warning'));
+    expect(decision?.querySelector<HTMLElement>('[data-testid="group-peek-decision-dot"]')?.style.background).toBe(
+      'var(--semantic-warning)',
+    );
+    const mention = harness.container.querySelector<HTMLElement>('[data-testid="group-peek-mention"]');
+    const unread = harness.container.querySelector<HTMLElement>('[data-testid="group-peek-unread"]');
+    expect(mention?.textContent).toBe(language === 'zh' ? '@你' : '@you');
+    expect(unread?.textContent).toBe(language === 'zh' ? '1 未读' : '1 unread');
+    const mentionStyle = mention?.getAttribute('style');
+    const unreadStyle = unread?.getAttribute('style');
+    await act(async () =>
+      harness.container.querySelector<HTMLButtonElement>('[data-testid="group-peek-more"]')?.click(),
+    );
+    expect(harness.container.querySelector('[data-testid="thread-row-mention"]')?.getAttribute('style')).toBe(
+      mentionStyle,
+    );
+    expect(harness.container.querySelector('[data-testid="thread-row-unread"]')?.getAttribute('style')).toBe(
+      unreadStyle,
+    );
   });
   it('viewing a pending decision does not settle it; owner invalidation after handling removes its priority', async () => {
     setup(5);

@@ -77,7 +77,7 @@ export function WorkspaceToolsContent(props: WorkspaceToolsContentProps) {
               className="shell-focusable"
               data-workspace-destination="mode:product-schedule"
               aria-label={t.openCalendar}
-              onClick={() => choose(HOME_TRANSITIONAL_DESTINATIONS.allWork)}
+              onClick={() => choose({ ...HOME_TRANSITIONAL_DESTINATIONS.allWork, label: t.calendar })}
             >
               {t.calendar}
             </button>
@@ -96,7 +96,7 @@ export function WorkspaceToolsContent(props: WorkspaceToolsContentProps) {
             <button
               type="button"
               className="shell-focusable"
-              onClick={() => choose(canonicalLauncherDestination('mode', 'tasks'))}
+              onClick={() => choose({ ...canonicalLauncherDestination('mode', 'tasks'), label: t.tasks })}
             >
               {t.tasks}
             </button>
@@ -104,21 +104,11 @@ export function WorkspaceToolsContent(props: WorkspaceToolsContentProps) {
             <button
               type="button"
               className="shell-focusable"
-              onClick={() => choose(canonicalLauncherDestination('mode', 'artifacts'))}
+              onClick={() => choose({ ...canonicalLauncherDestination('mode', 'artifacts'), label: t.works })}
             >
               {t.works}
             </button>
             {t.inHeader}
-            {t.beforeEvolution}
-            <button
-              type="button"
-              className="shell-focusable"
-              data-workspace-destination="workspace:capability-evolution"
-              aria-label={t.openEvolution}
-              onClick={() => choose(HOME_TRANSITIONAL_DESTINATIONS.capabilityEvolution)}
-            >
-              {t.evolution}
-            </button>
             {t.beforeSettings}
             <span className="whitespace-nowrap">
               <button

@@ -701,6 +701,11 @@ export function resolveWorkspaceDestinationTarget(
   return { destinationRef: target[1], threadId: target[0] === 'global' ? null : target[0] };
 }
 
+/** The voice destination surface (host:voice), keyed on the shared Home destination identity (audit row44). */
+export function isVoiceDestinationSurface(surface: WorkspaceSurfaceDescriptor): boolean {
+  return resolveWorkspaceDestinationTarget(surface)?.destinationRef === 'host:voice';
+}
+
 function decodeStringPair(key: string): [string, string] | null {
   try {
     const decoded: unknown = JSON.parse(decodeURIComponent(key));

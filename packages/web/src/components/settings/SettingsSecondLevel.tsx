@@ -1,7 +1,9 @@
 'use client';
 
 import type { KeyboardEvent, ReactNode } from 'react';
+import { accountsCopy } from '../accounts/accounts.shell-copy';
 import { HubIcon } from '../hub-icons';
+import { useShellCopy } from '../shell/shell-copy';
 import { PinToggle } from './SettingsPinToggle';
 import { type SettingsEntry, sectionLabel } from './settings-ia';
 
@@ -32,6 +34,8 @@ export function SettingsSecondLevel({
   fixedLayout?: boolean;
   children: ReactNode;
 }) {
+  const accountsText = useShellCopy(accountsCopy);
+  const labelOf = (id: string) => (id === 'accounts' ? accountsText.title : sectionLabel(id));
   if (entry.destination.kind !== 'sections') return <>{children}</>;
   const items = entry.destination.items;
   const sectionIds = items.flatMap((item) => (item.kind === 'section' ? [item.sectionId] : []));
@@ -88,7 +92,7 @@ export function SettingsSecondLevel({
                   fontWeight: current ? 500 : undefined,
                 }}
               >
-                {sectionLabel(sectionId)}
+                {labelOf(sectionId)}
               </button>
             );
           })}
@@ -97,7 +101,7 @@ export function SettingsSecondLevel({
           {selectedIsKnown && (
             <PinToggle
               pinned={isPinned(selection)}
-              label={sectionLabel(selection)}
+              label={labelOf(selection)}
               onToggle={() => onTogglePin(selection)}
             />
           )}

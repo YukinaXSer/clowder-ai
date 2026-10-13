@@ -2953,7 +2953,7 @@
     },
     "bodySource": {
       "path": "packages/web/src/components/accounts/AccountRowMenu.tsx",
-      "anchor": "改备注"
+      "anchor": "onClick={onRename}"
     },
     "contexts": ["concierge_open"],
     "audience": ["cvo"],

@@ -15,6 +15,8 @@ import {
   WORKSPACE_SAMPLE_THREAD,
 } from './f322-b-workspace-v3-fixture.mjs';
 import { registerWorkspaceMarkdownJourneys } from './f322-b-workspace-v3-markdown-journey.mjs';
+import { registerComposerFocusJourneys } from './f322-composer-focus.journey.mjs';
+import { registerToolsEntryJourneys } from './f322-tools-entry.journey.mjs';
 
 let suite;
 const evidenceDir = process.env.F322_HOME_EVIDENCE_DIR ?? '/tmp/f322-b-workspace-v3-native';
@@ -175,10 +177,10 @@ async function runCase({ width, language, theme }) {
     );
     assert.equal(await home.locator('.home-live-status[data-tone="wait"]').count(), 10);
     const waitColor = await home
-      .locator('.home-live-status[data-tone="wait"]')
+      .locator('.home-live-status[data-tone="wait"] .home-execution-status-dot')
       .first()
       .evaluate((element) => {
-        const color = getComputedStyle(element).color;
+        const color = getComputedStyle(element).backgroundColor;
         const probe = document.createElement('span');
         probe.style.color = 'var(--semantic-warning)';
         element.appendChild(probe);
@@ -186,7 +188,7 @@ async function runCase({ width, language, theme }) {
         probe.remove();
         return { color, expected };
       });
-    assert.equal(waitColor.color, waitColor.expected, 'Background wait uses the actual amber warning token');
+    assert.equal(waitColor.color, waitColor.expected, 'Background wait dot uses the actual amber warning token');
     assert.equal(await home.getByTestId('workspace-home-status-summary').count(), 1);
     await home
       .getByTestId('workspace-home-status-summary')
@@ -335,7 +337,7 @@ async function runCase({ width, language, theme }) {
     await originalHome(page, language);
     await toolsTrigger.click();
     await tools.waitFor();
-    assert.equal(await tools.locator('[data-workspace-destination]').count(), 15);
+    assert.equal(await tools.locator('[data-workspace-destination]').count(), 18);
     assert.deepEqual(
       await tools.locator('.home-group-title').allTextContents(),
       language === 'en' ? ['Recent work pages', 'Activity', 'Code', 'Other'] : ['最近的工作页', '活动', '代码', '其他'],
@@ -488,3 +490,6 @@ for (const parameters of [
     runCase(parameters));
 
 registerWorkspaceMarkdownJourneys(() => suite, resizeWorkspace, evidenceDir);
+
+registerToolsEntryJourneys(() => suite);
+registerComposerFocusJourneys(() => suite);

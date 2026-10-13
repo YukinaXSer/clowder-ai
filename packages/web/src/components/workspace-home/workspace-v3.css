@@ -269,11 +269,21 @@
   gap: 5px;
 }
 [data-shell="v2"] .home-live-heading .home-live-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   white-space: normal;
   color: var(--shell-muted);
 }
-[data-shell="v2"] .home-live-heading .home-live-status[data-tone="wait"] {
-  color: var(--semantic-warning);
+[data-shell="v2"] .home-execution-status-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--semantic-info);
+}
+[data-shell="v2"] .home-live-status[data-tone="wait"] .home-execution-status-dot {
+  background: var(--semantic-warning);
 }
 .home-execution-status-compact {
   display: none;

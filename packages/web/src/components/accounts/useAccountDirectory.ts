@@ -10,18 +10,23 @@ export function useAccountDirectory() {
   const [error, setError] = useState('');
   const [memberError, setMemberError] = useState('');
   const generation = useRef(0);
+  const membersSequence = useRef(0);
   const refresh = useCallback(async () => {
-    const observed = generation.current;
+    const observed = ++generation.current;
+    const membersRead = ++membersSequence.current;
     const fetchMembers = async () => {
       try {
         const response = await apiFetch('/api/accounts/codex/members', undefined, { afterCurrentGet: true });
         if (!response.ok) throw new Error('成员使用的账号读不到');
         const body = (await response.json()) as { selection?: AccountSelection };
-        if (observed !== generation.current) return;
+        if (membersRead !== membersSequence.current) return;
         setSelection(body.selection);
         setMemberError(body.selection ? '' : '成员使用的账号读不到');
       } catch {
-        if (observed === generation.current) setMemberError('成员使用的账号读不到');
+        if (membersRead === membersSequence.current) {
+          setSelection(undefined);
+          setMemberError('成员使用的账号读不到');
+        }
       }
     };
     void fetchMembers();
@@ -55,7 +60,7 @@ export function useAccountDirectory() {
     setLoading(false);
   }, []);
   const applyBinding = useCallback((next: AccountSelection) => {
-    generation.current++;
+    membersSequence.current++;
     setSelection(next);
     setMemberError('');
   }, []);
