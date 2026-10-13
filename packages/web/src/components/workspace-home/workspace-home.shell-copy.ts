@@ -22,7 +22,7 @@ export const homeCopy = defineShellCopy(
     zh: {
       live: {
         title: '正在发生',
-        scope: (count: number) => `全局 · ${count}`,
+        scope: (count: number) => `所有对话 · ${count} 件在跑`,
         here: '当前对话',
         replying: '回复中',
         waitingBackground: '等待后台完成',
@@ -84,15 +84,15 @@ export const homeCopy = defineShellCopy(
         changedFiles: (count: number) => `${count} 个文件`,
         noMatch: '没有找到匹配的内容',
         // Only places verified reachable in the new shell (headers, mailbox, settings), not the design's wishful sentence.
-        signpost: '任务和作品在对话顶栏；审批和待处理在窄栏的待办；调度、猫猫团队、评估和社区在设置与管理里。',
+        signpost: '任务和作品在对话顶栏；审批和待处理在窄栏的待办；调度、能力进化、社区在设置与管理。',
         // Two entries whose final homes are not wired yet (north-star §1.8, 10-03): each says where it belongs and, until
         // that is connected, opens from here. The link ends the sentence in both languages, so `tail` is the full stop.
         transitional: {
           allWork: {
-            lead: '托付给猫的工作在待办的「全部工作」，接上之前先',
+            lead: '日程入口将移入待办，接上之前先',
             link: '从这里打开',
             tail: '。',
-            openLabel: '打开全部工作',
+            openLabel: '打开日程',
           },
           capabilityEvolution: {
             lead: '能力进化在设置与管理；直达入口接上之前先',
@@ -117,6 +117,7 @@ export const homeCopy = defineShellCopy(
       // Name and one-line description of each tool row. What a row opens is not here (home-rows.ts hands the host the same
       // destination object the classic launcher does); the words only.
       rows: {
+        now: { label: '正在发生', description: '所有正在进行的工作' },
         files: { label: '文件与代码', description: '按目录浏览项目文件' },
         changes: { label: '变更', description: '工作区里已修改的文件' },
         git: { label: 'Git', description: '分支、提交与仓库状态' },
@@ -127,6 +128,8 @@ export const homeCopy = defineShellCopy(
         theater: { label: '回放', description: '从头回放当前对话' },
         recall: { label: '记忆', description: '当前对话用到的记忆' },
         voice: { label: '语音与会议', description: '语音转写、会议记录' },
+        films: { label: '片子', description: '已有视频项目与制作' },
+        team: { label: '猫猫团队', description: '成员能力与协作状态' },
       },
       // "How long": a duration after 已等待, and "how long ago" after 观察于. English says the whole word and counts it.
       time: {
@@ -142,7 +145,7 @@ export const homeCopy = defineShellCopy(
     en: {
       live: {
         title: 'Happening now',
-        scope: (count: number) => `Everywhere · ${count}`,
+        scope: (count: number) => `All conversations · ${count} running`,
         here: 'Current conversation',
         replying: 'Replying',
         waitingBackground: 'Waiting on background work',
@@ -204,13 +207,13 @@ export const homeCopy = defineShellCopy(
         changedFiles: (count: number) => (count === 1 ? '1 file' : `${count} files`),
         noMatch: 'No matches',
         signpost:
-          'Tasks and works are in the conversation header; approvals and pending items are in To-do; scheduling, the cat team, evaluation and community are in Settings.',
+          'Tasks and works are in the conversation header; approvals and pending items are in To-do; scheduling, capability evolution and community are in Settings.',
         transitional: {
           allWork: {
-            lead: 'Work handed to cats will move to To-do › All work. Until then, ',
+            lead: 'Work handed to cats will move to To-do › Schedule. Until then, ',
             link: 'open it here',
             tail: '.',
-            openLabel: 'Open All work',
+            openLabel: 'Open Schedule',
           },
           capabilityEvolution: {
             lead: 'Capability evolution is in Settings. Until its direct link is ready, ',
@@ -232,6 +235,7 @@ export const homeCopy = defineShellCopy(
         },
       },
       rows: {
+        now: { label: 'Happening now', description: 'All work currently running' },
         files: { label: 'Files & code', description: 'Browse project files by folder' },
         changes: { label: 'Changes', description: 'Files modified in the workspace' },
         git: { label: 'Git', description: 'Branches, commits and repository status' },
@@ -242,6 +246,8 @@ export const homeCopy = defineShellCopy(
         theater: { label: 'Replay', description: 'Replay the current conversation from the start' },
         recall: { label: 'Memory', description: 'Memories the cats used in this conversation' },
         voice: { label: 'Voice & meetings', description: 'Voice transcription and meeting notes' },
+        films: { label: 'Films', description: 'Existing video projects and production' },
+        team: { label: 'Cat team', description: 'Member capabilities and collaboration' },
       },
       time: {
         justNow: 'just now',

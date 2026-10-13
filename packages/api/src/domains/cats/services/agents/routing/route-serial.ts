@@ -3879,6 +3879,25 @@ export async function* routeSerial(
             }),
         );
         await scheduleTurnCustodyStopGate(textLegacyObservedBlock);
+        // A bounded dot consultation returns via the actual execution source;
+        // plain replyTo/text cannot grant this target. Existing routing dedup merges @dot.
+        if (
+          !isFreshnessSupplement &&
+          !collectiveBoundTurn &&
+          !hadError &&
+          !catSignal?.aborted &&
+          turnTriggerMessageId &&
+          deps.dotReplyTarget &&
+          (await deps.dotReplyTarget({
+            userId,
+            threadId,
+            catId,
+            replyTo: streamReplyTo,
+            extra: { causal: { kind: 'invocation_reply', triggerMessageId: turnTriggerMessageId } },
+          }))
+        )
+          a2aMentions = [...new Set([...a2aMentions, createCatId('gpt-dot')])];
+
         a2aMentions = getLocalRoutingLineStartMentions(a2aMentions);
 
         // Preserve independent first-pass reasoning inside one serial route.

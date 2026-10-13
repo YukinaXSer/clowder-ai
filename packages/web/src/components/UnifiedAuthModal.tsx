@@ -30,13 +30,21 @@ interface UnifiedAuthModalProps {
   editProfile?: UnifiedAuthEditData;
   /** When provided, locks client to this value (wizard context). */
   initialClientId?: BuiltinAccountClient;
+  initialAuthType?: ProfileAuthType;
 }
 
-export function UnifiedAuthModal({ open, onClose, onCreated, editProfile, initialClientId }: UnifiedAuthModalProps) {
+export function UnifiedAuthModal({
+  open,
+  onClose,
+  onCreated,
+  editProfile,
+  initialClientId,
+  initialAuthType,
+}: UnifiedAuthModalProps) {
   const isEdit = Boolean(editProfile);
   const defaultClientId =
-    editProfile?.clientId ?? initialClientId ?? (editProfile?.authType === 'api_key' ? undefined : 'anthropic');
-  const [authMode, setAuthMode] = useState<AuthMode>(editProfile?.authType === 'api_key' ? 'api_key' : 'oauth');
+    editProfile?.clientId ?? initialClientId ?? (editProfile?.authType === 'api_key' ? undefined : 'openai');
+  const [authMode, setAuthMode] = useState<AuthMode>(editProfile?.authType ?? initialAuthType ?? 'oauth');
   const [clientId, setClientId] = useState<BuiltinAccountClient | undefined>(defaultClientId);
   const [displayName, setDisplayName] = useState(editProfile?.displayName ?? '');
   const [baseUrl, setBaseUrl] = useState(editProfile?.baseUrl ?? '');
@@ -56,9 +64,9 @@ export function UnifiedAuthModal({ open, onClose, onCreated, editProfile, initia
   useEffect(() => {
     if (open && !prevOpenRef.current) {
       const cid =
-        editProfile?.clientId ?? initialClientId ?? (editProfile?.authType === 'api_key' ? undefined : 'anthropic');
+        editProfile?.clientId ?? initialClientId ?? (editProfile?.authType === 'api_key' ? undefined : 'openai');
       setClientId(cid);
-      setAuthMode(editProfile?.authType === 'api_key' ? 'api_key' : 'oauth');
+      setAuthMode(editProfile?.authType ?? initialAuthType ?? 'oauth');
       setDisplayName(editProfile?.displayName ?? '');
       setBaseUrl(editProfile?.baseUrl ?? '');
       setModels(editProfile?.models ?? []);
@@ -70,7 +78,7 @@ export function UnifiedAuthModal({ open, onClose, onCreated, editProfile, initia
       setAdvancedOpen(Boolean(editProfile?.envVars && Object.keys(editProfile.envVars).length > 0));
     }
     prevOpenRef.current = open;
-  }, [open, editProfile, initialClientId]);
+  }, [open, editProfile, initialClientId, initialAuthType]);
 
   if (!open) return null;
 
@@ -219,16 +227,18 @@ export function UnifiedAuthModal({ open, onClose, onCreated, editProfile, initia
           </button>
         </div>
 
-        <p className="mb-1 text-xs text-cafe-muted">账号管理</p>
-        <h4 className="mb-4 text-base font-semibold text-cafe">{isEdit ? '编辑账号' : '添加账号'}</h4>
-
         {/* Mode toggle */}
         <div
           className={`mb-4 flex rounded-lg border border-[var(--console-border-soft)] p-0.5 ${isEdit ? 'opacity-50' : ''}`}
         >
           <button
             type="button"
-            onClick={() => !isEdit && setAuthMode('oauth')}
+            onClick={() => {
+              if (!isEdit) {
+                setAuthMode('oauth');
+                setClientId('openai');
+              }
+            }}
             className={`flex-1 rounded-md py-1.5 text-xs font-medium transition ${
               isOAuth ? 'bg-cafe-accent text-[var(--cafe-surface)] shadow-sm' : 'text-cafe-secondary'
             } ${isEdit ? 'cursor-not-allowed' : !isOAuth ? 'hover:bg-[var(--console-hover-bg)]' : ''}`}
@@ -282,7 +292,7 @@ export function UnifiedAuthModal({ open, onClose, onCreated, editProfile, initia
                     请选择账户归属
                   </option>
                 )}
-                {CLIENT_OPTIONS.map((c) => (
+                {(isOAuth && !isEdit ? ['openai' as const] : CLIENT_OPTIONS).map((c) => (
                   <option key={c} value={c}>
                     {builtinClientLabel(c)}
                   </option>

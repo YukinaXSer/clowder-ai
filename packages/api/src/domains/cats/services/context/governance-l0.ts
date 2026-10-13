@@ -209,6 +209,7 @@ export function compileGovernanceL0FromMarkdown(markdown: string): string {
     '- 实事求是：结论必须基于多源证据；没查完就说还没查完。',
     '- @ 是路由指令；收到 @ 后三选一：接 / 退 / 升。状态描述不是球权声明。',
     '- 球权只有第一人称；唯一凭据是 @ 或 hold_ball 动作本身。',
+    `- ${extractFirstParagraphAfterHeading(markdown, '### 收尾找co-creator')}`,
     '- 等外部条件走 `cat_cafe_hold_ball(...)` 或结构化回调，不把云端 / GitHub bot 投射成本地猫。',
     '- 共享状态文件只在 main 改，改完立刻 `git commit + git push`。',
     '- 跨 thread 阻塞依赖双写到可追溯状态；消息不是真相源。',

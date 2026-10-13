@@ -123,6 +123,8 @@ CAS、可见 attribution、owner receipt 与 undo，且用户可随时收回权�
 
 ## Current State / 现状基线
 
+**2026-10-12 297 图片整页交付偏差（当前优先项）。** You 在 Studio 原文 `[thread-id]#private-source-id` 与实拍指出新作品页仍是旧布局；父亲查截图、main/runtime8f98及已接受修正1–5，旧 `ReviewCanvasToolbar`、`ReviewMediaControls` 和 `WorkspaceContentReviewProjection` 的两排工具/“修改想法”区域确实仍在。原图片修改/候选回流、K3、文本与暖态返回的有界实证有效；**297 的新图片整页尚未交付、未经过 Studio 对稿，不能描述成只差部署或最后验收。** 父未把这一开放目标持续推进到新页面，是产品交付责任缺口。
+
 | 证据 | 已成立 | 尚未成立 |
 |---|---|---|
 | [F307](F307-composable-workbench.md) | application-level working set、typed surface、tab/split/restore owner 已冻结 | 不解释内容选区、批注、patch 或版本重定位 |
@@ -579,7 +581,7 @@ remap/rebase/conflict/orphan 旅程后再 KEEP。
 ### Phase U 文本旅程：选区批注进入同一聊天引用链
 
 - **Scope unit:** 一个普通Markdown/代码文件的真实选区与同一quote attachment；来源为child CVO095/098四图，父Astra按CVO904确认。
-- **Flow:** 从tree/Home/聊天文件链接进入共同landing → 选文并在原就地卡填写评论 → Enter/加入当前聊天 → 输入框出现可展开、移除的annotation卡片，文件旁出现可操作的编号 → 点击编号重开原批注卡、修改说明或移除，并同步同一输入框草稿 → 人明确发送 → 猫收到最终选文/评论/workspace_file来源。加入与改批注阶段不发送、不建Task、不在F309另写新文本批注；原文件编辑和明确请猫修改→diff→接受写回继续可用。
+- **Flow:** 从文件树、Home搜索、作品或聊天文件链接进入同一文件的可读显示 → 在该页选文并在原就地卡填写评论 → Enter/加入当前聊天 → 输入框出现可展开、移除的annotation卡片，文件旁出现可操作的编号 → 点击编号重开原批注卡、修改说明或移除，并同步同一输入框草稿 → 人明确发送 → 猫收到最终选文/评论/workspace_file来源。同一个md不再另开“批注页”；“请猫修改”“返回来源”并进同页顶栏，原文件编辑、听读和明确请猫修改→diff→接受写回继续可用。加入与改批注阶段不发送、不建Task、不在F309另写新文本批注。
 - **Compatibility:** 旧F309文本讨论继续读/回复；旧草稿与未知提交先恢复/核receipt，不静默迁移。图片/视频与DOCX不因此裁掉既有能力。
 - **Evidence required:** 真实宿主入口、陌生输入与IME/换行、390px、文件侧编号重开编辑/移除与同一聊天草稿同步、发送前后结构化载荷/来源回跳及旧草稿兼容；共享组件单测不证明已交付。当前为确认合同，非PASS。
 
@@ -643,6 +645,7 @@ remap/rebase/conflict/orphan 旅程后再 KEEP。
 | R31 | 同一文件同一源版本的一次发送可携带多处独立选区，合为一个修改请求，原话一份、各处稳定编号 | AC-U6, AC-U8 | 两处选区一次承接/一次候选返回/逐处核对；不合大框、不拆成多次提交；旧单选区可读 | [ ] |
 | R32 | 采用、不采用、写回冲突或结果未知的真实记录投影进原聊天，并可由原负责猫消费；候选可从聊天回到对应 diff | AC-U6, AC-U8 | 真实 accept/reject/CAS conflict/unknown → 同 request/candidate/receipt 回执；恢复不重复、不冒充人、不自动重写 | [ ] |
 | R33 | 文档旁待发送批注编号与聊天红点一样可重开编辑、移除，并同步原聊天草稿 | AC-U15 | CVO444实拍；编号点击/键盘、单条及同段多条、原附件身份、修改/移除后发送载荷与恢复 | [ ] |
+| R34 | 同一 Markdown 跨文件树/搜索/作品为同一可读页面并能就地批注；Workspace 图片卡先看大图，唯一批注进入原作品模式 | AC-U16, AC-U15 | CVO903定稿；三入口同源显示/编号编辑/一次发送/持久恢复，图片预览→精确版本→原Chat→原处返回 | [ ] |
 
 ### Studio K1/K2 后端补齐登记（2026-10-02）
 
@@ -748,6 +751,7 @@ Why: F309 derives request identity, Task continuation and result projection with
 - [ ] **AC-U13**：图片作品模式只有同一Chat输入框和一个发送，作品工具就近；猫按原话、圈选和上下文判断批注意图，修改语境下指出问题或期望结果即可承接，不要求追加“请开工”或再次按修改按钮，不按问句形式分类。纯讨论不建修改Task，真歧义才澄清；无选区仍可改整图，真实人来源/版本/范围/具名目标/执行位置可核对。发送后原话与范围、具名回复、真实执行进度/取消在同一聊天中可见，不新建媒体讨论账本。Task“通过此版本/要求修改”只归还审阅；workspace“采用并写回/不采用”依applied/conflict/unknown分别显示，发送不隐含写回。保存/草稿/历史权限仍按原receipt，工具与提示不遮挡操作。
 - [ ] **AC-U14**：保存成功只结束该次确认的编辑；失败/unknown、保存中继续输入、迟到回执、带草稿退出/恢复均保留正确内容，重试不重复提交，不误清独立评论草稿。Sol6完成本工作单元、Sol5.6独立审查及门禁合入后一次final-only回流；父Astra在实际包含merge的Alpha亲自验U10–U14并记录结果，不能以该批PASS关闭整个Phase U。
 - [ ] **AC-U15**：普通Markdown/代码文件旁的待发送批注编号可点击或键盘打开已有批注卡，回填原选文与说明；修改或移除只作用于同一聊天草稿中的对应附件，不新增副本、不清其他输入、不自动发送。同段多条能明确选中目标，编辑期间滚动及桌面/390px均可用；中文IME与换行沿用聊天既有行为。往返/刷新保留确认后的草稿，明确发送后结构化载荷包含最终说明与准确来源，移除项不被发送；已发送引用和历史只读仍按原授权处理。保留原失败复现、非作者审查及合入后的真实Alpha操作证据，不能以显示编号或组件单测当作完成。
+- [ ] **AC-U16**：按CVO903及Workspace v3定稿，同一真实Markdown从文件树、Home搜索、作品打开为同一好读的显示，页内选文/编号/原Chat引用、文件编辑与听读可用，不再切到独立批注页；“请猫修改/返回来源”位于同页顶栏，跨入口保持canonical file/source/revision、原附件id、草稿与来源返回。Workspace图片作品卡先在正中看所选确切图，只有一个“批注”进入已有作品模式，保留同一Chat和真实版本；关闭/返回回原入口，聊天图片和候选回执的已有打开语义不退化。真实宿主覆盖288/480侧栏、390视口及浅暗，立即刷新、发送ACK后冷开按真实durable owner复验；B/C/F309不得各造reader、review或草稿store。可操作版本交Studio对稿，F309父Alpha与F322整屏组合分别验，不以定稿、DOM复用或局部单测代替完整旅程。
 
 ### Phase B — Real Open-source Owner Foundations and Contract Kernel
 

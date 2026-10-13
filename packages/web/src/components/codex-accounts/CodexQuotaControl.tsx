@@ -1,26 +1,44 @@
 'use client';
-import type { AccountQuotaObservation } from '@cat-cafe/shared';
-import { useState } from 'react';
+import { type AccountQuotaObservation, accountQuotaOwnerMatches, type CodexAccountIdentity } from '@cat-cafe/shared';
+import { useEffect, useRef, useState } from 'react';
 import { SettingsSecondaryButton } from '../settings/primitives';
 import { accountRequest } from './account-request';
 
 export function CodexQuotaControl({
   accountRef,
-  observation,
+  observation: suppliedObservation,
   reload,
+  managed = false,
+  identity,
 }: {
   accountRef: string;
   observation?: AccountQuotaObservation;
   reload: () => Promise<void>;
+  managed?: boolean;
+  identity?: CodexAccountIdentity;
 }) {
   const [busy, setBusy] = useState(false);
+  const [storedObservation, setObservation] = useState(suppliedObservation);
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+  const observation =
+    managed && !accountQuotaOwnerMatches(storedObservation, accountRef, identity) ? undefined : storedObservation;
+  useEffect(() => {
+    setObservation(suppliedObservation);
+  }, [suppliedObservation]);
   const [error, setError] = useState('');
   async function query() {
     setBusy(true);
     setError('');
     try {
-      await accountRequest(`/api/accounts/${accountRef}/codex/quota`, {});
-      await reload();
+      const result = await accountRequest<{ quota: AccountQuotaObservation }>(
+        `/api/accounts/${encodeURIComponent(accountRef)}/codex/quota`,
+        {},
+      );
+      if (managed && !accountQuotaOwnerMatches(result.quota, accountRef, identityRef.current))
+        throw new Error('账号登录已变化，请重新查询');
+      setObservation(result.quota);
+      void reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : '无法查询额度');
     } finally {
