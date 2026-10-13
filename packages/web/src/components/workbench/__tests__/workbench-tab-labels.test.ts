@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { WORKSPACE_MODE_META, WORKSPACE_MODES, type WorkspaceMode } from '@/lib/workspace-modes';
 import { checkShellCopyParity } from '../../shell/__tests__/shell-copy-parity-check';
 import { resolveShellCopy } from '../../shell/shell-copy';
+import { homeCopy } from '../../workspace-home/workspace-home.shell-copy';
 import {
   createBrowserSurface,
   createFilePreviewSurface,
@@ -11,6 +12,15 @@ import {
 } from '../real-surface-adapters';
 import { workbenchTabLabels } from '../workbench-tab-labels';
 import { workspaceChromeCopy } from '../workspace-chrome.shell-copy';
+
+it('names opened evaluations consistently with the tools catalogue in both languages', () => {
+  const surface = createWorkspaceModeSurface('eval', 'thread-code');
+  for (const language of ['zh', 'en'] as const) {
+    const chrome = resolveShellCopy(workspaceChromeCopy, language);
+    const catalogue = resolveShellCopy(homeCopy, language);
+    expect(workbenchTabLabels([surface], chrome.modeTabs).get(surface.id)).toBe(catalogue.rows.eval.label);
+  }
+});
 
 it('keeps unique owner titles unchanged and separates file paths without changing descriptors', () => {
   const files = ['README.md', 'docs/README.md', 'guide.md'].map((path) =>

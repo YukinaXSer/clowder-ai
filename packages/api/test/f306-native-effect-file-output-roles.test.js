@@ -226,13 +226,9 @@ test('Git output detection cannot be hidden after a consumed literal separator',
   }
 });
 
-test('real shared and Claude hook entries refuse output syntax before an effect', () => {
+test('real shared hook entry refuse output syntax before an effect', () => {
   const shared = fileURLToPath(new URL('../../../scripts/native-effect-target-guard.mjs', import.meta.url));
-  const claude = fileURLToPath(new URL('../../../.claude/hooks/runtime-sanctuary-guard.sh', import.meta.url));
-  for (const [program, args] of [
-    [process.execPath, [shared]],
-    ['/bin/bash', [claude]],
-  ]) {
+  for (const [program, args] of [[process.execPath, [shared]]]) {
     for (const command of [
       'git diff HEAD~1',
       'git cat-file -p HEAD~1',

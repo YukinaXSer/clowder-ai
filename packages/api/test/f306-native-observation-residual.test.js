@@ -17,18 +17,31 @@ mkdirSync(ordinary);
 mkdirSync(guardedBin, { recursive: true });
 after(() => rmSync(root, { recursive: true, force: true }));
 const noHost = { selfHost: () => ({ confidence: 'none' }) };
+const publicGuard = fileURLToPath(new URL('../scripts/public-test-external-resource-guard.mjs', import.meta.url));
+
+function classifyCleanLoaderFixture(payload) {
+  const inheritedOptions = process.env.NODE_OPTIONS;
+  // Model a clean loader for this synchronous, non-executing classifier call.
+  // Ignore only the exact public harness preload; hostile loader fixtures remain
+  // inputs. Installed network guards stay active, and every spawn inherits the
+  // original preload restored in finally.
+  if (inheritedOptions === `--import=${publicGuard}`) delete process.env.NODE_OPTIONS;
+  try {
+    return decideNativeHookPayload(payload, noHost);
+  } finally {
+    if (inheritedOptions === undefined) delete process.env.NODE_OPTIONS;
+    else process.env.NODE_OPTIONS = inheritedOptions;
+  }
+}
 function parity(command, decision, cwd = main) {
   const results = [];
   for (const tool_name of ['Bash', 'exec_command']) {
-    const result = decideNativeHookPayload(
-      {
-        tool_name,
-        cwd,
-        tool_input: { command, cmd: command },
-        ...(tool_name === 'exec_command' ? { turn_id: 'owned-observation-turn' } : {}),
-      },
-      noHost,
-    );
+    const result = classifyCleanLoaderFixture({
+      tool_name,
+      cwd,
+      tool_input: { command, cmd: command },
+      ...(tool_name === 'exec_command' ? { turn_id: 'owned-observation-turn' } : {}),
+    });
     assert.equal(result.decision, decision, `${tool_name}: ${command}: ${JSON.stringify(result)}`);
     results.push(result);
   }
@@ -76,56 +89,6 @@ test('sequential comparison retains program proof around a separate read pipelin
     ])
       await t.test(`deny: ${cwd}: ${command}`, () => parity(command, 'deny', cwd));
   }
-});
-
-test('real provider hook entries accept the comparison chain and reject a protected output', () => {
-  const source = join(runtime, 'read-source');
-  const destination = join(ordinary, 'read-target');
-  mkdirSync(source);
-  mkdirSync(destination);
-  writeFileSync(join(source, 'file.txt'), 'same\n');
-  writeFileSync(join(destination, 'file.txt'), 'same\n');
-  const command = `diff -qr ${source} ${destination} && find ${source} -type f && du -sk ${source} ${destination}`;
-  const guard = fileURLToPath(new URL('../../../scripts/native-effect-target-guard.mjs', import.meta.url));
-  const claude = fileURLToPath(new URL('../../../.claude/hooks/runtime-sanctuary-guard.sh', import.meta.url));
-  for (const [binary, args] of [
-    [process.execPath, [guard]],
-    ['/bin/bash', [claude]],
-  ]) {
-    const allowed = spawnSync(binary, args, {
-      input: JSON.stringify({ tool_name: 'Bash', cwd: main, tool_input: { command } }),
-      encoding: 'utf8',
-    });
-    assert.equal(allowed.status, 0, allowed.stderr);
-    assert.equal(allowed.stdout.trim(), '');
-    const blocked = spawnSync(binary, args, {
-      input: JSON.stringify({
-        tool_name: 'Bash',
-        cwd: main,
-        tool_input: { command: `diff -qr ${source} ${destination} > ${runtime}/output` },
-      }),
-      encoding: 'utf8',
-    });
-    assert.equal(JSON.parse(blocked.stdout).hookSpecificOutput.permissionDecision, 'deny');
-  }
-  const compared = spawnSync('/bin/sh', ['-c', command], { encoding: 'utf8' });
-  assert.equal(compared.status, 0, compared.stderr);
-  assert.ok(compared.stdout.includes(join(source, 'file.txt')));
-  const counted = `diff -qr ${source} ${destination} && find ${source} -type f | wc -l && du -sk ${source} ${destination}`;
-  for (const [binary, args] of [
-    [process.execPath, [guard]],
-    ['/bin/bash', [claude]],
-  ]) {
-    const result = spawnSync(binary, args, {
-      input: JSON.stringify({ tool_name: 'Bash', cwd: runtime, tool_input: { command: counted } }),
-      encoding: 'utf8',
-    });
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(result.stdout.trim(), '');
-  }
-  const countResult = spawnSync('/bin/sh', ['-c', counted], { encoding: 'utf8' });
-  assert.equal(countResult.status, 0, countResult.stderr);
-  assert.match(countResult.stdout, /^\s*1\s*$/m);
 });
 
 test('comparison cannot erase unknown options, output writes or executable segments', () => {
@@ -253,25 +216,27 @@ test('gh read proof distinguishes inherited lookup from inline selection in all 
           assert.equal(result.effect, 'read');
       });
     }
-    await t.test('real Claude hook accepts canonical runtime read and denies every inline selector', () => {
-      const hook = fileURLToPath(new URL('../../../.claude/hooks/runtime-sanctuary-guard.sh', import.meta.url));
-      for (const [command, expected] of [
-        [`${gh} pr view 5346`, 'allow'],
-        ...inline.map((command) => [command, 'deny']),
-      ]) {
-        const result = spawnSync('/bin/bash', [hook], {
-          input: JSON.stringify({ tool_name: 'Bash', cwd: runtime, tool_input: { command } }),
-          encoding: 'utf8',
-        });
-        assert.equal(result.status, 0, result.stderr);
-        if (expected === 'allow') assert.equal(result.stdout.trim(), '');
-        else assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
-      }
-    });
   } finally {
     if (savedPath === undefined) delete process.env.PATH;
     else process.env.PATH = savedPath;
     if (savedDelegate === undefined) delete process.env.CAT_CAFE_REAL_GH_PATH;
     else process.env.CAT_CAFE_REAL_GH_PATH = savedDelegate;
+  }
+});
+
+test('real shared hook keeps inherited loader selection unproved under public isolation', () => {
+  const guard = fileURLToPath(new URL('../../../scripts/native-effect-target-guard.mjs', import.meta.url));
+  for (const command of [`diff -qr ${runtime} ${ordinary}`, `diff -qr ${runtime} ${ordinary} > ${runtime}/output`]) {
+    const result = spawnSync(process.execPath, [guard], {
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `--import=${publicGuard}`,
+        CAT_CAFE_PUBLIC_TEST_RESOURCE_SCOPE: 'distributable',
+      },
+      input: JSON.stringify({ tool_name: 'Bash', cwd: runtime, tool_input: { command } }),
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
   }
 });

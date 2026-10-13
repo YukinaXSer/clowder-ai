@@ -14,7 +14,7 @@ tips_exempt: "本次整治首先让已有入口和状态自解释，不用主动
 
 # F322: Everyday Work Experience｜看得懂、找得到、接得上
 
-> **Status**: in-progress / 2026-10-13核账修订：boot24冻结的52项完成声明为15真有、36部分有、1仍v1；另3项未宣称完成的v1残留不混算。部分有区分已证偏差与只读未重验，旧版本Alpha真实证据保留、不能外推当前整旅程。原B/F309/J3、组底色到版和批注#5448/#5450按原线继续；09/45回B，47回F320，43回轨迹，44回原语音，42由原C协调、获批v2 D现场取完整页对稿证据；旧D只保历史。23行Alpha写入续验由Kimi统一回填，39/40因Kimi是工具叶页作者，交Luna独立取证。#5442作者Alpha三场景已过，正式runtime与整页双语未签；图标#5452已合d0248d3bed，作者Alpha浅暗已过；正式加载/整页验收未签。原Task/授权/修复与验收边界不变，整F322开放。
+> **Status**: in-progress / 2026-10-13核账修订：boot24冻结的52项完成声明为15真有、36部分有、1仍v1；另3项未宣称完成的v1残留不混算。部分有区分已证偏差与只读未重验，旧版本Alpha真实证据保留、不能外推当前整旅程。原B/F309/J3、组底色到版和批注#5448/#5450按原线继续；09/45回B，47回F320，43回轨迹，44回原语音，42由原C协调、获批v2 D现场取完整页对稿证据；旧D只保历史。23行Alpha终报已回：19行标有限范围pass、20/52因样本无效未验、非产品偏差，39/40由Luna独立取证仍未验收；原Kimi沿1301补两有效旅程。#5442作者Alpha三场景已过，正式runtime与整页双语未签；图标#5452已合d0248d3bed，作者Alpha浅暗已过；正式加载/整页验收未签。原Task/授权/修复与验收边界不变，整F322开放。
 >
 > **operator source**: `[thread-id]#private-source-id` — 点名图标含义不明、hover 说明迟迟不出现，要求 Astra 与 Opus 讨论并交付可执行 roadmap；允许立项跟踪及整合旧 UI/UX feature。
 > **Original source**: `private-source-id` — 比较 Codex 新版与 Clowder AI，要求分析体验差距与学习路径。
@@ -42,8 +42,6 @@ Ragdoll（设计，@opus55）和小星星（ROOT，@codex-astra）共同维护�
 **10-13 Home5451两条main检查RED**：原侧栏733在完整main `7c899c270e` 运行现有检查，ROOT已读两份原日志：`workspace-v3.shell-copy.ts`的stopNamed/confirmStopNamed/trajectoryNamed参数0样本不变，namespace检查失败；`f307-workspace-v3-assembly-consumers-3`遗漏5451新增4个真实消费者的expected同步。已投原B742=`[thread-id]#private-source-id`沿同一writer修样本及精确合同。后继761已回：[#5459](https://github.com/zts212653/clowder-ai/pull/5459)实际于02:40:38Z合入`1e46d115c2`，ROOT另核canonical GitHub及两文件diff；只增加异名样本与四项精确expected，未放宽判据或改产品。作者与原非作者审查给出copy4/4、consumer9/9 GREEN；本指挥消费证据，不重跑。不换侧栏writer，也不把已证无关的5453交付绑在这两项上。原日志在 `.cat-cafe/evidence/f322-sidebar-group-peek-20261012/latest-main-{copy,policy}-baseline.log`。
 
 **10-13 原非作者验收职责纠正**：Luna759因总线程导航出现#1587而取消原39/40受管命令、转查PR；这不是授权转交。ROOT已实际投770=`private-source-id`纠正：沿原513与Kimi已确认的Alpha cut`0e318f1c44`/窗口恢复原两项，先消费自己的732/26795终态与清理，不重建Alpha、不重问窗口；无PR样本或Terminal不可用如实回Kimi同一核账。#1587仍归专用Sol6.1，不由Luna接；后继Luna846/857已恢复并回Kimi：原cut源thread404，完整Works10项无真实#5404，39未进入Changes；40 Terminal available:false、无会话或命令。ROOT已读两份原件，保未验/环境不可用，不判功能失败或通过；受管837为Luna的26834而非ROOT命令，原Kimi继续同一核账。
-
-**共享Alpha生命周期待原owner核处**：核账Kimi999仍占默认Alpha，语音现场1006报告重启/清理；ROOT约04:41Z见3011/3012/4111无监听、6397 PID25147在，不能记全端口清或核账已Release。已实际1010投原Kimi沿其原权限恢复/固定cut后续验；ROOT不启停。核账按0e318→90cbe分段，F325使用窗口仍由其与原F325协调，39/40缺口不被重启消除。
 
 ### 10-12 当前排工（ROOT，You2019）
 

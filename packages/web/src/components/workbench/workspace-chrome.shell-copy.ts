@@ -84,7 +84,7 @@ export const workspaceChromeCopy = defineShellCopy(
         artifacts: 'Works',
         approval: 'Approvals',
         trajectory: 'Trajectory',
-        eval: 'Evaluation',
+        eval: 'Evaluations',
       },
       voiceSurface: {
         label: 'Voice & meetings',

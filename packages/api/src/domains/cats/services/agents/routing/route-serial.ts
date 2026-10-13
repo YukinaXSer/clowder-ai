@@ -5111,6 +5111,7 @@ export async function* routeSerial(
           turnCustodyWake.source === 'coordination_terminal' &&
           turnCustodyProjection?.state === 'covered_empty';
         const shouldEmitSilentCompletion =
+          !catSignal?.aborted &&
           !callbackAlreadyStored &&
           collectedToolEvents.length > 0 &&
           !hasRichBlocks &&
@@ -5319,7 +5320,14 @@ export async function* routeSerial(
         }
 
         if (!shouldPersistNoTextMessage && !callbackAlreadyStored) {
-          if (!sawUserFacingSystemInfo && !isCoveredTerminalCleanStop && !isFreshnessClosureSuccessor) {
+          // Stop already has its own cancellation notice. A suppressed late provider
+          // terminal must not turn that canceled turn into a silent success diagnosis.
+          if (
+            !catSignal?.aborted &&
+            !sawUserFacingSystemInfo &&
+            !isCoveredTerminalCleanStop &&
+            !isFreshnessClosureSuccessor
+          ) {
             yield {
               type: 'system_info' as AgentMessageType,
               catId,
