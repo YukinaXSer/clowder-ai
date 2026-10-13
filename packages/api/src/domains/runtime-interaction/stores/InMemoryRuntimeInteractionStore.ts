@@ -13,13 +13,27 @@ import type {
 export class InMemoryRuntimeInteractionStore implements RuntimeInteractionStore {
   private readonly records = new Map<string, RuntimeInteractionRecord>();
 
+  async saveConversation(record: RuntimeInteractionRecord, expectedRevision: number | null): Promise<boolean> {
+    const previous = this.records.get(record.request.interactionId);
+    if (!record.conversation || record.request.kind !== 'question' || !record.request.conversation) return false;
+    if (expectedRevision === null ? previous !== undefined : previous?.conversation?.revision !== expectedRevision)
+      return false;
+    if (record.conversation.revision !== (expectedRevision ?? 0) + 1) return false;
+    this.records.set(record.request.interactionId, clone(record));
+    return true;
+  }
+
+  async listConversationsNeedingRecovery(): Promise<RuntimeInteractionRecord[]> {
+    return [...this.records.values()].filter((record) => record.conversation?.needsRecovery).map(clone);
+  }
+
   async createStaged(input: CreateRuntimeInteractionInput): Promise<RuntimeInteractionRecord> {
     const id = input.request.interactionId;
     if (this.records.has(id)) throw new Error(`runtime interaction already exists: ${id}`);
     const invocationId = input.request.owner.invocationId;
     if (
       [...this.records.values()].some(
-        (record) => isActive(record) && record.request.owner.invocationId === invocationId,
+        (record) => isActive(record) && !isConversation(record) && record.request.owner.invocationId === invocationId,
       )
     ) {
       throw new Error(`active interaction already exists for invocation: ${invocationId}`);
@@ -67,7 +81,7 @@ export class InMemoryRuntimeInteractionStore implements RuntimeInteractionStore 
 
   async invalidate(input: InvalidateRuntimeInteractionInput): Promise<RuntimeInteractionRecord | null> {
     const record = this.records.get(input.interactionId);
-    if (!record || !isActive(record)) return null;
+    if (!record || !isActive(record) || isConversation(record)) return null;
     const invalidated = invalidatedRecord(record, input.reasonCode, input.now);
     this.records.set(input.interactionId, invalidated);
     return clone(invalidated);
@@ -108,7 +122,7 @@ export class InMemoryRuntimeInteractionStore implements RuntimeInteractionStore 
   ): RuntimeInteractionRecord[] {
     const invalidated: RuntimeInteractionRecord[] = [];
     for (const [id, record] of this.records) {
-      if (!isActive(record) || !predicate(record)) continue;
+      if (!isActive(record) || isConversation(record) || !predicate(record)) continue;
       const next = invalidatedRecord(record, reasonCode, now);
       this.records.set(id, next);
       invalidated.push(clone(next));
@@ -119,6 +133,10 @@ export class InMemoryRuntimeInteractionStore implements RuntimeInteractionStore 
 
 function isActive(record: RuntimeInteractionRecord): boolean {
   return record.status === 'staged' || record.status === 'pending';
+}
+
+function isConversation(record: RuntimeInteractionRecord): boolean {
+  return record.request.kind === 'question' && record.request.conversation !== undefined;
 }
 
 function invalidatedRecord(

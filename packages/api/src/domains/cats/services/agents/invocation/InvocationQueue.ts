@@ -2004,6 +2004,7 @@ export class InvocationQueue {
     skipCatIds?: Set<string>,
     onlyCatId?: string,
     excludeAgent = false,
+    skipEntryIds?: ReadonlySet<string>,
   ): QueueEntry | null {
     let best: QueueEntry | null = null;
     let bestTargetCatId: string | undefined;
@@ -2012,6 +2013,7 @@ export class InvocationQueue {
       for (const e of q) {
         if (e.status !== 'queued' || e.exactSteerBatch) continue;
         if (excludeAgent && e.source === 'agent') continue;
+        if (skipEntryIds?.has(e.id)) continue;
         const targetCatId =
           onlyCatId !== undefined
             ? isOrdinaryQueueTargetEligible(e, onlyCatId)

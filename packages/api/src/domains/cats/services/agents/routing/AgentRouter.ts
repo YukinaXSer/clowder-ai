@@ -613,6 +613,7 @@ export interface AgentRouterOptions {
   providerNativeFreshnessFactory?: import('../invocation/invoke-single-cat.js').InvocationDeps['providerNativeFreshnessFactory'];
   /** F306: canonical cross-provider request/response surface. */
   runtimeInteractionPort?: import('../../../../runtime-interaction/ports/RuntimeInteractionPort.js').RuntimeInteractionPort;
+  conversationQuestionAsk?: import('../../../../runtime-interaction/ConversationQuestionService.js').ConversationQuestionService['ask'];
   /** F254 Phase D (AC-D4): Freshness event log for stream output audit trail */
   freshnessEventLog?: import('../../freshness/FreshnessAttentionEventLog.js').FreshnessAttentionEventLog;
   /** F254 Phase E: persistent closure + atomic MessageStore output commit. */
@@ -720,6 +721,7 @@ export class AgentRouter {
   private providerNativeFreshnessFactory?: import('../invocation/invoke-single-cat.js').InvocationDeps['providerNativeFreshnessFactory'];
   /** F306 */
   private runtimeInteractionPort?: import('../../../../runtime-interaction/ports/RuntimeInteractionPort.js').RuntimeInteractionPort;
+  private conversationQuestionAsk?: import('../../../../runtime-interaction/ConversationQuestionService.js').ConversationQuestionService['ask'];
   /** F254 Phase D (AC-D4) */
   private freshnessEventLog?: import('../../freshness/FreshnessAttentionEventLog.js').FreshnessAttentionEventLog;
   /** F254 Phase E */
@@ -865,6 +867,7 @@ export class AgentRouter {
     this.freshnessStateStore = options.freshnessStateStore;
     this.providerNativeFreshnessFactory = options.providerNativeFreshnessFactory;
     this.runtimeInteractionPort = options.runtimeInteractionPort;
+    this.conversationQuestionAsk = options.conversationQuestionAsk;
     this.freshnessEventLog = options.freshnessEventLog;
     this.freshnessOutputCommitCoordinator = options.freshnessOutputCommitCoordinator;
     this.injectionTraceStore = options.injectionTraceStore;
@@ -1523,6 +1526,7 @@ export class AgentRouter {
           ? { providerNativeFreshnessFactory: this.providerNativeFreshnessFactory }
           : {}),
         ...(this.runtimeInteractionPort ? { runtimeInteractionPort: this.runtimeInteractionPort } : {}),
+        ...(this.conversationQuestionAsk ? { conversationQuestionAsk: this.conversationQuestionAsk } : {}),
         ...(this.memoryCuePromptService ? { memoryCuePromptService: this.memoryCuePromptService } : {}),
         ...(this.profileCueOpportunitySource ? { profileCueOpportunitySource: this.profileCueOpportunitySource } : {}),
         ...(this.threadOverviewOpportunitySource

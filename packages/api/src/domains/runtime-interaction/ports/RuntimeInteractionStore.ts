@@ -26,6 +26,9 @@ export interface InvalidateRuntimeInteractionInput {
 }
 
 export interface RuntimeInteractionStore {
+  /** null revision creates; otherwise an atomic CAS. No TTL and no live invocation requirement. */
+  saveConversation(record: RuntimeInteractionRecord, expectedRevision: number | null): Promise<boolean>;
+  listConversationsNeedingRecovery(): Promise<RuntimeInteractionRecord[]>;
   createStaged(input: CreateRuntimeInteractionInput): Promise<RuntimeInteractionRecord>;
   anchor(
     interactionId: string,

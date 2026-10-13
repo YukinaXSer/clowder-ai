@@ -18,6 +18,7 @@ export const RuntimeInteractionKeys = {
   active: () => 'runtime-interaction:active',
   pendingByUser: (userId: string) => `runtime-interaction:user:${userId}:pending`,
   activeByInvocation: (invocationId: string) => `runtime-interaction:invocation:${invocationId}:active`,
+  conversationRecovery: () => 'runtime-interaction:conversation:recovery',
 } as const;
 
 const CREATE_STAGED_LUA = `
@@ -65,6 +66,43 @@ return 1
 
 export class RedisRuntimeInteractionStore implements RuntimeInteractionStore {
   constructor(private readonly redis: RedisClient) {}
+
+  async saveConversation(record: RuntimeInteractionRecord, expectedRevision: number | null): Promise<boolean> {
+    if (!record.conversation || record.request.kind !== 'question' || !record.request.conversation) return false;
+    if (record.conversation.revision !== (expectedRevision ?? 0) + 1) return false;
+    const saved = await this.redis.eval(
+      `
+local existing = redis.call('EXISTS', KEYS[1])
+if ARGV[1] == 'new' then
+  if existing == 1 then return 0 end
+elseif redis.call('HGET', KEYS[1], 'conversationRevision') ~= ARGV[1] then return 0 end
+redis.call('HSET', KEYS[1], 'request', ARGV[2], 'status', ARGV[3], 'hostEpoch', ARGV[4],
+  'updatedAt', ARGV[5], 'conversation', ARGV[6], 'conversationRevision', ARGV[7])
+if ARGV[8] ~= '' then redis.call('HSET', KEYS[1], 'cardRef', ARGV[8]) end
+if ARGV[9] == 'true' then redis.call('SADD', KEYS[2], ARGV[10]) else redis.call('SREM', KEYS[2], ARGV[10]) end
+if ARGV[3] == 'pending' then redis.call('ZADD', KEYS[3], tonumber(ARGV[5]), ARGV[10]) else redis.call('ZREM', KEYS[3], ARGV[10]) end
+return 1`,
+      3,
+      RuntimeInteractionKeys.detail(record.request.interactionId),
+      RuntimeInteractionKeys.conversationRecovery(),
+      RuntimeInteractionKeys.pendingByUser(record.request.owner.userId),
+      expectedRevision === null ? 'new' : String(expectedRevision),
+      JSON.stringify(record.request),
+      record.status,
+      record.hostEpoch,
+      String(record.updatedAt),
+      JSON.stringify(record.conversation),
+      String(record.conversation.revision),
+      record.cardRef ? JSON.stringify(record.cardRef) : '',
+      String(record.conversation.needsRecovery),
+      record.request.interactionId,
+    );
+    return Number(saved) === 1;
+  }
+
+  async listConversationsNeedingRecovery(): Promise<RuntimeInteractionRecord[]> {
+    return this.readMany(await this.redis.smembers(RuntimeInteractionKeys.conversationRecovery()));
+  }
 
   async createStaged(input: CreateRuntimeInteractionInput): Promise<RuntimeInteractionRecord> {
     const record: RuntimeInteractionRecord = {
@@ -185,6 +223,7 @@ export class RedisRuntimeInteractionStore implements RuntimeInteractionStore {
     reasonCode: RuntimeInteractionTerminalReasonCode,
     now: number,
   ): Promise<RuntimeInteractionRecord | null> {
+    if (existing.request.kind === 'question' && existing.request.conversation) return null;
     const terminal: RuntimeInteractionTerminal = { status: 'invalidated', reasonCode, settledAt: now };
     const id = existing.request.interactionId;
     const transitioned = await this.redis.eval(
@@ -224,5 +263,8 @@ function parseRecord(raw: Record<string, string>): RuntimeInteractionRecord | nu
     ...(raw.cardRef ? { cardRef: JSON.parse(raw.cardRef) as RuntimeInteractionCardRef } : {}),
     ...(raw.terminal ? { terminal: JSON.parse(raw.terminal) as RuntimeInteractionTerminal } : {}),
     updatedAt: Number(raw.updatedAt),
+    ...(raw.conversation
+      ? { conversation: JSON.parse(raw.conversation) as RuntimeInteractionRecord['conversation'] }
+      : {}),
   };
 }

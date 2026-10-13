@@ -84,6 +84,12 @@ export class RuntimeInteractionService {
     options?: { signal?: AbortSignal },
   ): Promise<RuntimeInteractionResponse> {
     const request = parseRuntimeInteractionRequest(input);
+    if (request.kind === 'question' && request.conversation) {
+      throw new RuntimeInteractionError(
+        'invalid_response',
+        'Conversation questions use the durable nonblocking service',
+      );
+    }
     try {
       await this.store.createStaged({ request, hostEpoch: this.hostEpoch, now: this.now() });
     } catch (error) {

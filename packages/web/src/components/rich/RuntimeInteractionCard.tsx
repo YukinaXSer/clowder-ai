@@ -4,6 +4,7 @@ import type { RuntimeInteractionRecord, RuntimeInteractionResponse } from '@cat-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { RichCardBlock } from '@/stores/chat-types';
 import { apiFetch } from '@/utils/api-client';
+import { ConversationQuestionSurface } from './ConversationQuestionSurface';
 import { RuntimeInteractionDecisionActions } from './RuntimeInteractionDecisionActions';
 import { RuntimeInteractionElicitationForm } from './RuntimeInteractionElicitationForm';
 import { RuntimeInteractionQuestionForm } from './RuntimeInteractionQuestionForm';
@@ -52,8 +53,11 @@ export function RuntimeInteractionCard({ block, messageId }: { block: RichCardBl
     return () => window.removeEventListener('cat-cafe:runtime-interaction-updated', handler);
   }, [hydrate, interactionId]);
 
-  const submitMutation = async (suffix: 'respond' | 'reject', payload: Record<string, unknown>): Promise<void> => {
-    if (!record?.cardRef || submittingRef.current) return;
+  const submitMutation = async (
+    suffix: 'respond' | 'reject' | 'conversation',
+    payload: Record<string, unknown>,
+  ): Promise<boolean> => {
+    if (!record?.cardRef || submittingRef.current) return false;
     submittingRef.current = true;
     fetchGeneration.current += 1;
     setSubmitting(true);
@@ -69,13 +73,16 @@ export function RuntimeInteractionCard({ block, messageId }: { block: RichCardBl
         submittingRef.current = false;
         setSubmitting(false);
         await hydrate();
-        return;
+        setError('问题已更新，请查看最新内容后再提交。');
+        return false;
       }
       if (!response.ok || !responseBody.interaction) throw new Error(responseBody.error ?? '提交失败');
       fetchGeneration.current += 1;
       setRecord(responseBody.interaction);
+      return true;
     } catch (caught) {
       setError(errorMessage(caught));
+      return false;
     } finally {
       submittingRef.current = false;
       setSubmitting(false);
@@ -116,10 +123,24 @@ export function RuntimeInteractionCard({ block, messageId }: { block: RichCardBl
       {record && record.status !== 'staged' && !canonical ? (
         <p className="text-sm text-cafe-muted">只读副本：请回到原消息处理这个请求。</p>
       ) : null}
-      {record && canonical && record.status !== 'staged' && record.status !== 'pending' ? (
+      {record && canonical && record.conversation && record.status !== 'staged' ? (
+        <ConversationQuestionSurface
+          record={record}
+          disabled={submitting}
+          onAction={(action, response) =>
+            submitMutation('conversation', {
+              cardRef: record.cardRef,
+              expectedRevision: record.conversation?.revision,
+              action,
+              ...(response ? { response } : {}),
+            })
+          }
+        />
+      ) : null}
+      {record && canonical && !record.conversation && record.status !== 'staged' && record.status !== 'pending' ? (
         <TerminalState record={record} />
       ) : null}
-      {record && canonical && record.status === 'pending' ? (
+      {record && canonical && !record.conversation && record.status === 'pending' ? (
         <PendingSurface
           record={record}
           disabled={submitting}

@@ -1,5 +1,7 @@
 import type { RuntimeInteractionRequest, RuntimeInteractionResponse } from '@cat-cafe/shared';
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
+import { useIMEGuard } from '@/hooks/useIMEGuard';
+import { useQuestionKeyboard } from './useQuestionKeyboard';
 
 type QuestionRequest = Extract<RuntimeInteractionRequest, { kind: 'question' }>;
 type Question = QuestionRequest['questions'][number];
@@ -9,14 +11,39 @@ export function RuntimeInteractionQuestionForm({
   disabled,
   onSubmit,
   onReject,
+  rejectLabel = '不回答',
+  initialAnswers,
 }: {
   request: QuestionRequest;
   disabled: boolean;
   onSubmit: (response: RuntimeInteractionResponse) => void;
   onReject: () => void;
+  rejectLabel?: string;
+  initialAnswers?: Record<string, string[]>;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [otherValues, setOtherValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      request.questions.map((question) => {
+        const answer = initialAnswers?.[question.id]?.[0] ?? '';
+        return [
+          question.id,
+          !question.options || question.options.some((option) => option.label === answer) ? answer : '',
+        ];
+      }),
+    ),
+  );
+  const [otherValues, setOtherValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      request.questions.map((question) => {
+        const answer = initialAnswers?.[question.id]?.[0] ?? '';
+        return [
+          question.id,
+          question.options && !question.options.some((option) => option.label === answer) ? answer : '',
+        ];
+      }),
+    ),
+  );
+  const ime = useIMEGuard();
   const answers = useMemo(
     () =>
       Object.fromEntries(
@@ -32,9 +59,14 @@ export function RuntimeInteractionQuestionForm({
   return (
     <form
       className="space-y-3"
+      onCompositionStart={ime.onCompositionStart}
+      onCompositionEnd={ime.onCompositionEnd}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && (event.nativeEvent.isComposing || ime.isComposing())) event.preventDefault();
+      }}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!complete || disabled) return;
+        if (!complete || disabled || ime.isComposing()) return;
         onSubmit({
           kind: 'answers',
           answers: Object.fromEntries(Object.entries(answers).map(([id, answer]) => [id, [answer]])),
@@ -58,6 +90,7 @@ export function RuntimeInteractionQuestionForm({
           }}
         />
       ))}
+      <p className="hidden text-xs text-cafe-muted sm:block">选项获焦后，可用 ↑↓ 选择、Enter 确认。</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <button
           type="button"
@@ -65,12 +98,12 @@ export function RuntimeInteractionQuestionForm({
           onClick={onReject}
           className="min-h-10 rounded-xl border border-cafe px-3 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50"
         >
-          不回答
+          {rejectLabel}
         </button>
         <button
           type="submit"
           disabled={!complete || disabled}
-          className="min-h-10 rounded-xl bg-[var(--semantic-success)] px-3 py-2 text-sm font-medium text-[var(--cafe-accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="min-h-10 rounded-xl bg-[var(--cafe-accent)] px-3 py-2 text-sm font-medium text-[var(--cafe-accent-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           提交回答
         </button>
@@ -94,31 +127,44 @@ function QuestionField({
   onValueChange: (value: string) => void;
   onOtherValueChange: (value: string) => void;
 }) {
-  const inputId = `runtime-question-${question.id}`;
+  const uniqueId = useId();
+  const inputId = `runtime-question-${uniqueId}-${question.id}`;
   const otherInputId = `${inputId}-other`;
+  const fieldRef = useRef<HTMLFieldSetElement>(null);
+  const optionProps = useQuestionKeyboard({
+    ids: (question.options ?? []).map((option) => option.label),
+    selectedId: value || null,
+    disabled,
+    onSelect: onValueChange,
+    onConfirm: () => fieldRef.current?.closest('form')?.requestSubmit(),
+  });
   return (
-    <fieldset className="space-y-1.5" disabled={disabled}>
+    <fieldset ref={fieldRef} className="space-y-1.5" disabled={disabled}>
       <legend className="text-sm font-semibold">{question.header}</legend>
       <p className="text-xs text-cafe-muted">{question.question}</p>
-      <label htmlFor={inputId} className="sr-only">
-        {question.question}
-      </label>
+      {!question.options ? (
+        <label htmlFor={inputId} className="sr-only">
+          {question.question}
+        </label>
+      ) : null}
       {question.options ? (
-        <select
-          id={inputId}
-          name={question.id}
-          value={value}
-          onChange={(event) => onValueChange(event.target.value)}
-          className="min-h-10 w-full rounded-xl border border-cafe bg-cafe-surface px-3 text-sm"
-        >
-          <option value="">请选择</option>
-          {question.options.map((option) => (
-            <option key={option.label} value={option.label}>
-              {option.label}
-              {option.description ? ` — ${option.description}` : ''}
-            </option>
+        <div id={inputId} role="radiogroup" aria-label={question.question} className="space-y-2">
+          {question.options.map((option, index) => (
+            <button
+              key={option.label}
+              type="button"
+              disabled={disabled}
+              {...optionProps(option.label, index)}
+              onClick={() => onValueChange(option.label)}
+              className={`min-h-10 w-full rounded-lg border px-3 py-2 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--cafe-accent)] ${value === option.label ? 'border-[var(--cafe-accent)] bg-cafe-surface-elevated' : 'border-cafe bg-cafe-surface'}`}
+            >
+              <span>{option.label}</span>
+              {option.description ? (
+                <span className="mt-1 block text-xs text-cafe-muted">{option.description}</span>
+              ) : null}
+            </button>
           ))}
-        </select>
+        </div>
       ) : (
         <input
           id={inputId}
