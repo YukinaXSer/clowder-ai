@@ -13,7 +13,6 @@ import {
   resolveSafeInteractiveCallbackEndpoint,
   shouldKeepGuideOfferInteractive,
 } from './guideClientActions';
-import { useQuestionKeyboard } from './useQuestionKeyboard';
 
 // ── Pure function (exported for testing) ────────────────────
 
@@ -109,29 +108,17 @@ function SelectInteraction({
     onSelect([pendingId]);
   };
 
-  const keyboardOption = useQuestionKeyboard({
-    ids: options.map((option) => option.id),
-    selectedId: highlightId,
-    disabled,
-    onSelect: handleClick,
-    onConfirm: () => {
-      if (!hideSubmit && (!showCustomInput || customText.trim())) handleSubmit();
-    },
-  });
-
   return (
     <div className="space-y-2">
-      <div role="radiogroup" aria-label="选择回答" className="space-y-2">
-        {options.map((opt, index) => {
-          const isSelected = highlightId === opt.id;
-          return (
-            <button
-              key={opt.id}
-              {...keyboardOption(opt.id, index)}
-              type="button"
-              disabled={disabled}
-              onClick={() => handleClick(opt.id)}
-              className={`w-full text-left px-4 py-3 rounded-xl border-[1.5px] text-sm transition-all flex items-center gap-2.5
+      {options.map((opt) => {
+        const isSelected = highlightId === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => handleClick(opt.id)}
+            className={`w-full text-left px-4 py-3 rounded-xl border-[1.5px] text-sm transition-all flex items-center gap-2.5
               ${
                 isSelected
                   ? 'border-conn-amber-ring bg-conn-amber-bg '
@@ -139,27 +126,26 @@ function SelectInteraction({
                     ? 'border-cafe opacity-50 cursor-not-allowed'
                     : 'border-cafe hover:border-conn-amber-ring hover:bg-conn-amber-bg/50 cursor-pointer'
               }`}
-            >
-              <OptionIcon opt={opt} />
-              <div className="flex-1 min-w-0">
-                <span className={`font-semibold ${isSelected ? 'text-conn-amber-text' : ''}`}>{opt.label}</span>
-                {opt.description && <span className="block text-xs text-cafe-secondary mt-0.5">{opt.description}</span>}
-              </div>
-              {isSelected && (
-                <svg
-                  className="w-5 h-5 text-conn-amber-text shrink-0"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2.5}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              )}
-            </button>
-          );
-        })}
-      </div>
+          >
+            <OptionIcon opt={opt} />
+            <div className="flex-1 min-w-0">
+              <span className={`font-semibold ${isSelected ? 'text-conn-amber-text' : ''}`}>{opt.label}</span>
+              {opt.description && <span className="block text-xs text-cafe-secondary mt-0.5">{opt.description}</span>}
+            </div>
+            {isSelected && (
+              <svg
+                className="w-5 h-5 text-conn-amber-text shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </button>
+        );
+      })}
       {showCustomInput && (
         <div className="mt-1">
           <input

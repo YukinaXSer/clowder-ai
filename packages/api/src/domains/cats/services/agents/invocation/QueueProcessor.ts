@@ -538,10 +538,6 @@ export interface QueueProcessorDeps {
   /** F167 Phase S.1: carrier preflight plus failed/canceled runtime outcomes; success requires Evidence→Verdict. */
   actionSuccessorLeaseStore?: Pick<ActionSuccessorLeaseStore, 'preflight' | 'preflightOutput' | 'commitOutcome'>;
   deploymentWaitStartGuard?: Pick<DeploymentWaitStartGuard, 'check'>;
-  conversationQuestionStartGuard?: Pick<
-    import('../../../../runtime-interaction/ConversationQuestionStartGuard.js').ConversationQuestionStartGuard,
-    'check'
-  >;
   /** F167: inspect replacement and retire exact consumed terminals through the canonical dispatch fence. */
   a2aDispatchDispositionService?: Pick<
     A2ADispatchDispositionService,
@@ -3691,36 +3687,6 @@ export class QueueProcessor {
 
     const reservation = this.reserveProcessingSlot(slotKey, entry.id, entry.userId);
     try {
-      if (this.deps.conversationQuestionStartGuard) {
-        for (const selected of [entry, ...(exactBatchMembers ?? [])]) {
-          for (const messageId of this.queueEntryMessageIds(selected)) {
-            const decision = await this.deps.conversationQuestionStartGuard.check({
-              messageId,
-              threadId: entry.threadId,
-              userId: entry.userId,
-              catId,
-            });
-            if (!decision.ready) {
-              if (
-                decision.terminal &&
-                selected.source === 'connector' &&
-                this.queueEntryMessageIds(selected).length === 1 &&
-                this.deps.queueCustodyCoordinator
-              ) {
-                await this.deps.queueCustodyCoordinator.withdrawEntry(selected);
-                const latest = this.deps.queue.getEntrySnapshot(selected.threadId, selected.userId, selected.id);
-                if (latest) this.deps.queue.removeEntrySnapshotIfUnchanged(latest);
-              }
-              if (entry.exactSteerBatch)
-                this.deps.queue.rollbackExactSteerBatchProcessing(entry.threadId, entry.exactSteerBatch.reservationId);
-              else this.deps.queue.rollbackProcessing(entry.threadId, entry.id);
-              this.releaseProcessingSlot(slotKey, reservation);
-              await this.persistQueueEntry(this.deps.queue.getEntrySnapshot(entry.threadId, entry.userId, entry.id));
-              return false;
-            }
-          }
-        }
-      }
       if (this.deps.repairDispatchSource) {
         for (const selected of [entry, ...(exactBatchMembers ?? [])]) {
           for (const messageId of this.queueEntryMessageIds(selected)) await this.deps.repairDispatchSource(messageId);
@@ -3853,7 +3819,6 @@ export class QueueProcessor {
   ): Promise<{ started: boolean; entry?: QueueEntry }> {
     // F175: scan by comparator order, skip entries whose target slot is busy
     const busyCats = new Set<string>();
-    const waitingEntries = new Set<string>();
     let deferredForBusySlot = 0;
     for (;;) {
       const exact = this.deps.queue.peekActivatedExactSteerReservation(
@@ -3880,7 +3845,6 @@ export class QueueProcessor {
             new Set([...busyCats, ...this.pausedTargetCats(threadId)]),
             opts.onlyTargetCat ? catId : undefined,
             opts.onlyNonAgent,
-            waitingEntries,
           );
       if (!entry) {
         if (exact) continue;
@@ -3910,27 +3874,12 @@ export class QueueProcessor {
       }
 
       if (!(await this.startReservedEntry(entry, entrySk, entryCat, exact ? [entryCat] : eligibleTargetCats))) {
-        // A shared decision blocks this step, never the whole cat's independent work.
-        if (!exact && (await this.waitsForConversationAnswer(entry, entryCat))) {
-          waitingEntries.add(entry.id);
-          continue;
-        }
         this.emitContinuationDiagnostic(threadId, catId, 'start_rejected', deferredForBusySlot, entry.id);
         return { started: false };
       }
 
       return { started: true, entry };
     }
-  }
-
-  private async waitsForConversationAnswer(entry: QueueEntry, catId: string): Promise<boolean> {
-    const guard = this.deps.conversationQuestionStartGuard;
-    if (!guard) return false;
-    for (const messageId of this.queueEntryMessageIds(entry)) {
-      const decision = await guard.check({ messageId, threadId: entry.threadId, userId: entry.userId, catId });
-      if (!decision.ready) return true;
-    }
-    return false;
   }
 
   /**
@@ -5431,26 +5380,6 @@ export class QueueProcessor {
           if (finalStatus === 'canceled')
             await this.cancelMessageIds([messageId], log, 'deployment_wait_authority_stale');
           return executionResult(finalStatus);
-        }
-      }
-
-      if (this.deps.conversationQuestionStartGuard) {
-        for (const currentMessageId of allMessageIds) {
-          const decision = await this.deps.conversationQuestionStartGuard.check({
-            messageId: currentMessageId,
-            threadId,
-            userId,
-            catId: primaryCat,
-          });
-          if (!decision.ready) {
-            if (decision.terminal) {
-              finalStatus = 'canceled';
-              return executionResult('canceled');
-            }
-            deferredForBusyTarget = true;
-            return executionResult('failed');
-          }
-          if (decision.context) content += `\n\n${decision.context}`;
         }
       }
 

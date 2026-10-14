@@ -1228,7 +1228,6 @@ export interface InvocationDeps {
   }) => Promise<import('../../freshness/FreshnessNoticeBroker.js').ActiveInvocationFreshnessController | null>;
   /** F306: canonical cross-provider request/response surface. */
   readonly runtimeInteractionPort?: import('../../../../runtime-interaction/ports/RuntimeInteractionPort.js').RuntimeInteractionPort;
-  readonly conversationQuestionAsk?: import('../../../../runtime-interaction/ConversationQuestionService.js').ConversationQuestionService['ask'];
   readonly freshnessReinvokeCheck?: (params: {
     invocationId: string;
     threadId: string;
@@ -4086,20 +4085,6 @@ export async function* invokeSingleCat(deps: InvocationDeps, params: InvocationP
     };
 
     const processMessage = async (msg: AgentMessage): Promise<AgentMessage[]> => {
-      if (msg.type === 'system_info' && msg.content?.includes('"conversationQuestion"')) {
-        const { adoptProviderQuestion } = await import('../../../../runtime-interaction/adopt-provider-question.js');
-        if (
-          await adoptProviderQuestion({
-            message: msg,
-            owner: { userId, threadId, catId, invocationId },
-            ownerAuthProvenance: params.ownerAuthProvenance,
-            ...(originTriggerMessageId ? { sourceMessageId: originTriggerMessageId } : {}),
-            ...(originMessage?.content ? { originalWork: originMessage.content } : {}),
-            ...(deps.conversationQuestionAsk ? { ask: deps.conversationQuestionAsk } : {}),
-          })
-        )
-          return [];
-      }
       if (executionAccount && msg.metadata)
         msg = {
           ...msg,

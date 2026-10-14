@@ -56,8 +56,8 @@ function stableAsyncQuestionItemId(value: unknown): string | null {
 
 /**
  * Convert a provider-native async question into durable chat controls.
- * The invocation layer adopts the typed question into the durable conversation
- * owner. The legacy block shape remains readable for stored historical output.
+ * Codex does not wait for a response: selecting an option uses the ordinary
+ * interactive-block path, which sends a new user message to the same thread.
  */
 export function buildCodexAsyncQuestionMessages(item: Record<string, unknown>, catId: CatId): AgentMessage[] {
   const questions = normalizeCodexAsyncQuestions(item);
@@ -98,7 +98,7 @@ export function buildCodexAsyncQuestionMessages(item: Record<string, unknown>, c
       v: 1,
       interactiveType: 'select',
       title: question.title,
-      description: '回答将回到这个问题，接着原来的工作。',
+      description: '提交后会作为一条新的用户消息发送到当前对话。',
       options,
       autoGroup: false,
       ...(groupId ? { groupId } : {}),
@@ -107,19 +107,7 @@ export function buildCodexAsyncQuestionMessages(item: Record<string, unknown>, c
     return {
       type: 'system_info',
       catId,
-      content: JSON.stringify({
-        type: 'rich_block',
-        block,
-        conversationQuestion: {
-          itemId,
-          questions: questions.map((question, index) => ({
-            id: `q${index + 1}`,
-            header: `问题 ${index + 1}`,
-            question: question.title,
-            ...(question.options.length ? { options: question.options.map((label) => ({ label })) } : {}),
-          })),
-        },
-      }),
+      content: JSON.stringify({ type: 'rich_block', block }),
       timestamp: Date.now(),
     };
   });

@@ -1001,9 +1001,6 @@ async function main(): Promise<void> {
     messageStore,
     socketManager,
   });
-  let conversationQuestionService:
-    | import('./domains/runtime-interaction/ConversationQuestionService.js').ConversationQuestionService
-    | undefined;
   if (runtimeInteractionRuntime.startupInvalidated.length > 0) {
     app.log.warn(
       { count: runtimeInteractionRuntime.startupInvalidated.length },
@@ -2774,10 +2771,6 @@ async function main(): Promise<void> {
     ...(freshnessStateStore ? { freshnessStateStore } : {}),
     ...(providerNativeFreshnessFactory ? { providerNativeFreshnessFactory } : {}),
     runtimeInteractionPort: runtimeInteractionRuntime.service,
-    conversationQuestionAsk: (input) => {
-      if (!conversationQuestionService) throw new Error('Conversation question service is starting');
-      return conversationQuestionService.ask(input);
-    },
     ...(freshnessEventLog ? { freshnessEventLog } : {}),
     ...(freshnessOutputCommitCoordinator ? { freshnessOutputCommitCoordinator } : {}),
     ...(injectionTraceStore ? { injectionTraceStore } : {}),
@@ -2826,14 +2819,7 @@ async function main(): Promise<void> {
     messageStore,
     observationProvider: runtimeDeploymentContext?.provider ?? { observe: async () => null },
   });
-  const { ConversationQuestionStartGuard } = await import(
-    './domains/runtime-interaction/ConversationQuestionStartGuard.js'
-  );
   const queueProcessor = new QueueProcessor({
-    conversationQuestionStartGuard: new ConversationQuestionStartGuard({
-      store: runtimeInteractionRuntime.store,
-      messages: messageStore,
-    }),
     ...(dispatchReceiptService
       ? { repairDispatchSource: dispatchReceiptService.repairSource.bind(dispatchReceiptService) }
       : {}),
@@ -6195,27 +6181,6 @@ async function main(): Promise<void> {
     queue: invocationQueue,
     progress: (entry, targetCatId) => queueProcessor.progressOwnedCarrier(entry, targetCatId),
   });
-  const { createConversationQuestionService, conversationQuestionRecoverySpec, withdrawQuestionContinuations } =
-    await import('./domains/runtime-interaction/conversation-question-composition.js');
-  const { conversationQuestionRoutes, callbackConversationQuestionRoutes } = await import(
-    './routes/conversation-question-routes.js'
-  );
-  conversationQuestionService = createConversationQuestionService({
-    store: runtimeInteractionRuntime.store,
-    messages: messageStore,
-    socket: socketManager,
-    delivery: contentReturnDelivery,
-    ballCustody: ballCustodyIngest,
-    onError: (error) => app.log.warn({ err: error }, '[conversation-question] continuation remains pending'),
-    cancelQueued: (record) => withdrawQuestionContinuations(record, invocationQueue, queueCustodyCoordinator),
-  });
-  await app.register(conversationQuestionRoutes, { service: conversationQuestionService });
-  await app.register(callbackConversationQuestionRoutes, {
-    service: conversationQuestionService,
-    registry,
-    isAvailableCat: (catId) => catRegistry.has(catId),
-  });
-  taskRunnerV2.register(conversationQuestionRecoverySpec(conversationQuestionService));
   const artifactReview = createArtifactReviewIntegration({
     dataDir: process.env.CAT_CAFE_DATA_DIR ?? join(resolveActiveProjectRoot(), '.cat-cafe'),
     uploadDir: getDefaultUploadDir(process.env.UPLOAD_DIR),

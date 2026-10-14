@@ -124,8 +124,6 @@ const questionRequestSchema = baseRequestSchema
   .extend({
     kind: z.literal('question'),
     questions: z.array(runtimeQuestionSchema).min(1),
-    /** Durable conversational choice; never a provider permission or a blocking RPC. */
-    conversation: z.object({ subjectRef: nonBlank }).strict().optional(),
   })
   .strict();
 
@@ -243,42 +241,6 @@ export interface RuntimeInteractionRecord {
   readonly cardRef?: RuntimeInteractionCardRef;
   readonly terminal?: RuntimeInteractionTerminal;
   readonly updatedAt: number;
-  readonly conversation?: ConversationQuestionState;
-}
-
-export interface ConversationQuestionContinuation {
-  readonly id: string;
-  readonly workRef: string;
-  readonly catId: string;
-  readonly invocationId: string;
-  readonly work: string;
-  readonly afterAnswer: string;
-  readonly deliveredVersion: number;
-  readonly deliveryState?: string;
-  readonly messageId?: string;
-  readonly consumedVersion?: number;
-  readonly supersededBy?: string;
-}
-
-export interface ConversationQuestionAnswer {
-  readonly version: number;
-  readonly at: number;
-  readonly answers: Record<string, string[]>;
-  readonly questions: Extract<RuntimeInteractionRequest, { kind: 'question' }>['questions'];
-}
-
-/** User-visible history and durable resume outbox share the canonical question owner. */
-export interface ConversationQuestionState {
-  readonly revision: number;
-  readonly deferred: boolean;
-  readonly history: readonly ConversationQuestionAnswer[];
-  readonly continuations: readonly ConversationQuestionContinuation[];
-  readonly publishedVersion: number;
-  readonly needsRecovery: boolean;
-  readonly cancelPublished?: boolean;
-  /** Server-bound owner handoffs; replayed with the question publication outbox. */
-  readonly waiters?: readonly { owner: RuntimeInteractionOwner; sourceMessageId?: string; round: number }[];
-  readonly notes: readonly { catId: string; text: string; at: number }[];
 }
 
 export function parseRuntimeInteractionRequest(input: unknown): RuntimeInteractionRequest {

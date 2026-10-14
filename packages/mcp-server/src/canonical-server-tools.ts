@@ -1,5 +1,4 @@
 import { buildCanonicalToolRegistry, type CanonicalToolSources } from './canonical-tool-registry.js';
-import { conversationQuestionTools } from './tools/conversation-question-tools.js';
 import { homeActionTools } from './tools/home-action-tools.js';
 import {
   artifactReviewTools,
@@ -83,7 +82,6 @@ export const CANONICAL_TOOL_SOURCES = {
     ...pawFeelDispositionTools,
     ...richBlockRulesTools,
     ...runtimeInteractionTools,
-    ...conversationQuestionTools,
     ...gameActionTools,
     ...scheduleTools,
     ...homeStateTools,

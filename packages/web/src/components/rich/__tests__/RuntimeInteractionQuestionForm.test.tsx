@@ -13,6 +13,7 @@ import {
   provider,
   record,
   setInput,
+  setSelect,
 } from './runtime-interaction-test-fixtures';
 
 vi.mock('@/utils/api-client', () => ({ apiFetch: vi.fn() }));
@@ -124,15 +125,14 @@ describe('RuntimeInteractionQuestionForm', () => {
       root.render(<RichBlocks blocks={[block]} messageId={messageId} />);
       await Promise.resolve();
     });
-    const choices = container.querySelector('[role="radiogroup"]')!;
-    const alpha = choices.querySelector<HTMLButtonElement>('[role="radio"]')!;
+    const select = container.querySelector('select[name="environment"]') as HTMLSelectElement;
     const other = container.querySelector('input[name="environment-other"]') as HTMLInputElement;
-    expect(choices.getAttribute('aria-label')).toBe('Where should this run?');
+    expect(select.labels?.[0]?.textContent).toContain('Where should this run?');
     expect(other.labels?.[0]?.textContent).toContain('其他');
-    await act(async () => alpha.click());
+    await act(async () => setSelect(select, 'Alpha'));
     await act(async () => setInput(other, 'Custom'));
-    expect(alpha.getAttribute('aria-checked')).toBe('false');
-    await act(async () => alpha.click());
+    expect(select.value).toBe('');
+    await act(async () => setSelect(select, 'Alpha'));
     expect(other.value).toBe('');
 
     const submit = [...container.querySelectorAll('button')].find((button) => button.textContent === '提交回答');

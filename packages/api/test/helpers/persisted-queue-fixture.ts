@@ -14,7 +14,6 @@ import { MessageStore } from '../../src/domains/cats/services/stores/ports/Messa
 export function createPersistedQueueFixture(
   messages = new MessageStore(),
   registry?: Pick<InvocationRegistry, 'create'>,
-  options: Pick<ConstructorParameters<typeof QueueProcessor>[0], 'conversationQuestionStartGuard'> = {},
 ) {
   const queue = new InvocationQueue();
   const tracker = new InvocationTracker();
@@ -22,14 +21,12 @@ export function createPersistedQueueFixture(
   const turns = new InMemoryTurnExecutionStore();
   const coordinator = new QueuedMessageCustodyCoordinator({ messageStore: messages });
   const starts: { threadId: string; userId: string; invocationId: string }[] = [];
-  const prompts: string[] = [];
   const completed: Promise<void>[] = [];
   const releases: (() => void)[] = [];
   const providerControls = new Map<string, { release: () => void; settled: Promise<void> }>();
   const credentials = new Map<string, { invocationId: string; callbackToken: string }>();
   let additionalPromptMessageIds: string[] = [];
   const processor = new QueueProcessor({
-    ...options,
     queue,
     invocationTracker: tracker,
     messageStore: messages,
@@ -48,7 +45,6 @@ export function createPersistedQueueFixture(
     log: { info() {}, warn() {}, error() {} },
     router: {
       async *routeExecution(userId, _content, threadId, _messageId, targets, _intent, options) {
-        prompts.push(_content);
         const parentInvocationId = String(options?.parentInvocationId);
         const catId = targets[0]!;
         const auth = await registry?.create(
@@ -160,7 +156,6 @@ export function createPersistedQueueFixture(
     delivery,
     messages,
     starts,
-    prompts,
     waitForAwakening,
     close,
     credentials,

@@ -487,7 +487,6 @@ export {
   type WorkspaceFileQuoteReference,
   type WorkspaceFileQuoteSource,
 } from './context-attachment.js';
-export * from './conversation-question.js';
 export type {
   CrossThreadCoordination,
   CrossThreadCoordinationInput,
