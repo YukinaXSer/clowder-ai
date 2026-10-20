@@ -9,11 +9,13 @@ import { isAbsolute, join } from 'node:path';
 import { parse } from 'yaml';
 import { ModulePluginRuntime } from '../dist/domains/plugin/builtin-runtime/carriers/module-plugin-runtime.js';
 import { withPluginCallContext } from '../dist/domains/plugin/carrier/plugin-call-context.js';
+import { withOwnerOperationRequest } from '../dist/domains/plugin/carrier/plugin-owner-operation-context.js';
 import { FilesystemVerifiedPluginPackageLocator } from '../dist/domains/plugin/external-runtime/filesystem-package-locator.js';
 import { FilePluginInventoryStore, HostInventoryControlPlane } from '../dist/domains/plugin/host-inventory/index.js';
 import { LocalPluginPackageAdmission } from '../dist/domains/plugin/manager/local-package-admission.js';
 import { resolveLocalPluginEffectiveGrants } from '../dist/domains/plugin/manager/machine-catalog-provider.js';
 import { OFFICIAL_PLUGIN_HOST_POLICIES } from '../dist/domains/plugin/manager/official-plugin-host-policies.js';
+import { InstalledPluginOperations } from '../dist/domains/plugin/operations/plugin-operation-routes.js';
 
 const archive = process.argv[2];
 if (!archive || !isAbsolute(archive)) throw new Error('Supply the exact absolute candidate archive path');
@@ -58,6 +60,51 @@ try {
   });
   assert.equal(runtime.claims(record), true);
   await runtime.start(instanceId, record, grants);
+  // Model this isolated instance's successful activation in the inventory. The
+  // actual module above is running; no production inventory or config is used.
+  await store.transaction((transaction) => {
+    const instance = transaction.instances.get(instanceId);
+    transaction.instances.put({ ...instance, activationState: 'enabled', runtimeState: 'healthy' });
+  });
+  const states = new Map();
+  const operations = new InstalledPluginOperations({
+    inventory: store,
+    invocation: runtime,
+    configuration: {
+      readActionInput: async () => ({}),
+      readOperationState: async (_plugin, key) => states.get(key),
+      writeOperationState: async (_plugin, key, value) => {
+        states.set(key, value);
+      },
+      clearOperationState: async (_plugin, key) => {
+        states.delete(key);
+      },
+      configureOperationTargets: async () => [],
+    },
+  });
+  const ownerOperation = (key, action, payload = {}, confirmed = false) =>
+    withOwnerOperationRequest(
+      {
+        pluginId: manifest.pluginId,
+        operationKey: key,
+        actionId: action,
+        userId: 'acceptance-owner',
+        requestId: `acceptance-${key}-${action}`,
+        signal: new AbortController().signal,
+        confirmed,
+        assertCurrent() {},
+      },
+      () => operations.runAction(manifest.pluginId, key, action, { payload: JSON.stringify(payload) }),
+    );
+  const status = await ownerOperation('teamStatus', 'status');
+  assert.equal(status.status, 200, JSON.stringify(status.body));
+  assert.equal(status.body.render, 'status');
+  const empty = await ownerOperation('teamWorkbench', 'summary');
+  assert.equal(empty.status, 200, JSON.stringify(empty.body));
+  assert.equal(empty.body.data.statistics.analyzed, 0);
+  assert.equal(empty.body.data.settings.automaticAssignment, false);
+  const unconfirmed = await ownerOperation('teamWorkbench', 'republish', { id: 'a'.repeat(64), expectedRevision: 1 });
+  assert.equal(unconfirmed.status, 400, 'Host must reject publication before the plugin executes');
   await assert.rejects(
     runtime.invoke(instanceId, 'issue.team.inspect', { repo: 'zts212653/clowder-ai', number: 1628 }),
     /Host caller/,
@@ -104,6 +151,7 @@ try {
         grants,
         issue: { repo: result.data.repo, number: result.data.number, title: result.data.title },
         remoteWrites: 0,
+        ownerSettingsCarrier: ['health', 'summary', 'publication-confirmation-rejection'],
         liveCatInvocation: false,
         operatorInstallation: false,
       },
