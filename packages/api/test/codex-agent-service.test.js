@@ -2741,8 +2741,8 @@ describe('CodexAgentService Tests (CLI mode)', { concurrency: false }, () => {
 
   test('API-key isolation lives under user cache rather than the OS temporary directory', () => {
     assert.equal(
-      resolveCodexApiKeyIsolationRoot({ HOME: '/Users/example', XDG_CACHE_HOME: '/Users/example/.cache' }, 'darwin'),
-      '/Users/example/Library/Caches/clowder-ai/codex-api-key-homes',
+      resolveCodexApiKeyIsolationRoot({ HOME: '/home/user', XDG_CACHE_HOME: '/home/user/.cache' }, 'darwin'),
+      '/home/user/Library/Caches/clowder-ai/codex-api-key-homes',
     );
     assert.equal(
       resolveCodexApiKeyIsolationRoot({ HOME: '/home/example', XDG_CACHE_HOME: '/var/cache/example' }, 'linux'),
@@ -3921,6 +3921,32 @@ describe('CodexAgentService Tests (CLI mode)', { concurrency: false }, () => {
     assert.ok(
       proc.stdinData.includes('缅因猫'),
       `systemPrompt should be preserved in stdin prompt when images present, got: ${proc.stdinData.slice(0, 120)}`,
+    );
+  });
+
+  test('Host-verified HMR image path reaches the local CLI without a public upload URL', async () => {
+    const proc = createMockProcess();
+    const spawnFn = createMockSpawnFn(proc);
+    const service = new CodexAgentService({ l0CompilerFn: fakeL0Compiler, spawnFn });
+    const hmrId = `hmr_${'x'.repeat(32)}`;
+    const seen = [];
+    const promise = collect(
+      service.invoke('describe private image', {
+        contentBlocks: [{ type: 'image', url: `hmr:${hmrId}` }],
+        resolveTrustedImagePath: async (id) => {
+          seen.push(id);
+          return '/private/media/verified-image';
+        },
+      }),
+    );
+    emitCodexEvents(proc, [{ type: 'thread.started', thread_id: 'hmr-image-thread' }]);
+    await promise;
+    assert.deepEqual(seen, [hmrId]);
+    const args = spawnFn.mock.calls[0].arguments[1];
+    assert.equal(args[args.indexOf('--image') + 1], '/private/media/verified-image');
+    assert.equal(
+      args.some((arg) => String(arg).includes('/uploads/')),
+      false,
     );
   });
 

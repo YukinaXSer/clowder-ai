@@ -29,6 +29,7 @@ import type {
   ThreadMetadataPatch,
   ThreadMetadataV1,
   ThreadParticipantActivity,
+  ThreadPluginOwnershipV1,
   ThreadRoutingPolicyV1,
   ThreadSystemKind,
   VotingStateV1,
@@ -38,6 +39,7 @@ import {
   DEFAULT_THREAD_ID,
   deriveAutoThreadTitle,
   isThreadGoalStateV1,
+  isThreadPluginOwnershipV1,
   mergeThreadMetadata,
   parseThreadMetadataJson,
   validateMergedTotals,
@@ -256,6 +258,7 @@ export class RedisThreadStore implements IThreadStore {
     parentThreadId?: string,
     proposalAudit?: import('../ports/ThreadStore.js').ThreadProposalAudit,
     branchAudit?: import('../ports/ThreadStore.js').ThreadBranchAudit,
+    options?: import('../ports/ThreadStore.js').ThreadCreateOptions,
   ): Promise<Thread> {
     const now = Date.now();
     const thread: Thread = {
@@ -266,6 +269,7 @@ export class RedisThreadStore implements IThreadStore {
       participants: [],
       lastActiveAt: now,
       createdAt: now,
+      ...(options?.pinned ? { pinned: true, pinnedAt: now } : {}),
       ...(parentThreadId ? { parentThreadId } : {}),
       ...(proposalAudit
         ? {
@@ -488,6 +492,10 @@ export class RedisThreadStore implements IThreadStore {
   }
 
   async listProjectCandidates(userId: string, projectPath: string, threadIds: readonly string[]): Promise<Thread[]> {
+    return (await this.listCandidates(userId, threadIds)).filter((thread) => thread.projectPath === projectPath);
+  }
+
+  async listCandidates(userId: string, threadIds: readonly string[]): Promise<Thread[]> {
     const candidates = [...new Set(threadIds)];
     const ids: string[] = [];
     // The existing user list remains the visibility authority, including
@@ -505,8 +513,7 @@ export class RedisThreadStore implements IThreadStore {
         if (id !== undefined && (reply[1] !== null || id === DEFAULT_THREAD_ID)) ids.push(id);
       }
     }
-    const threads = await this.readListedThreads(ids);
-    return threads.filter((thread) => thread.projectPath === projectPath);
+    return this.readListedThreads(ids);
   }
 
   async hasByProject(userId: string, projectPath: string): Promise<boolean> {
@@ -942,6 +949,18 @@ export class RedisThreadStore implements IThreadStore {
       await this.deleteDetailFields(key, 'connectorHubState');
     } else {
       await this.setDetailFields(key, 'connectorHubState', JSON.stringify(state));
+    }
+  }
+
+  async updatePluginOwnership(threadId: string, ownership: ThreadPluginOwnershipV1 | null): Promise<void> {
+    if (ownership !== null && !isThreadPluginOwnershipV1(ownership)) {
+      throw new TypeError('invalid plugin thread ownership');
+    }
+    const key = ThreadKeys.detail(threadId);
+    if (ownership === null) {
+      await this.deleteDetailFields(key, 'pluginOwnership');
+    } else {
+      await this.setDetailFields(key, 'pluginOwnership', JSON.stringify(ownership));
     }
   }
 
@@ -1448,6 +1467,9 @@ export class RedisThreadStore implements IThreadStore {
     if (thread.connectorHubState) {
       result.connectorHubState = JSON.stringify(thread.connectorHubState);
     }
+    if (thread.pluginOwnership) {
+      result.pluginOwnership = JSON.stringify(thread.pluginOwnership);
+    }
     if (thread.externalRuntimeAnchorState) {
       result.externalRuntimeAnchorState = JSON.stringify(thread.externalRuntimeAnchorState);
     }
@@ -1643,6 +1665,16 @@ export class RedisThreadStore implements IThreadStore {
         }
       } catch {
         /* ignore malformed JSON */
+      }
+    }
+    if (data.pluginOwnership) {
+      try {
+        const parsed: unknown = JSON.parse(data.pluginOwnership);
+        if (isThreadPluginOwnershipV1(parsed)) {
+          result.pluginOwnership = parsed;
+        }
+      } catch {
+        /* ignore malformed plugin ownership */
       }
     }
     if (data.externalRuntimeAnchorState) {

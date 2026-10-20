@@ -293,24 +293,9 @@ KK／KU／UK／UU 是帮助思考的工具，不是必填表。
 
 **自动检测**：`scripts/check-fallback-layers.mjs` 扫描 PR diff，输出每文件 fallback 层数变化。`quality-gate` Step 3 引用该脚本结果。
 
-### Siamese 创意-实现解耦协议（F177 Phase C — 热情直改治理）
+### 已退役：Siamese 创意-实现解耦协议（F177 Phase C）
 
-> **设计原则**：Siamese的创意发现力是团队核心资产。"发现问题"和"动手改代码"是两件不同的事——解耦不是打压主动性，而是让创意和实现各走最优路径。
-
-**铁律**：发现问题 ≠ 动手实现。Siamese发现代码/逻辑/UX 问题后：
-1. **记录**：在当前消息描述发现（截图 / 文字 / 标注）
-2. **Handoff**：@ 执行猫（查 roster 确认具体句柄）交接实现
-3. **不动代码**：不 Edit/Write `packages/` `src/` 目录下的文件
-
-**允许的编辑范围**（白名单）：
-- `designs/` — 设计稿、wireframe、视觉方案
-- `docs/` — 文档、spec、讨论记录
-- `assets/` — 图片、图标、静态资源
-- 根目录 `.md` 文件
-
-**碰 packages/ src/ 的唯一例外**：只改样式常量/文案且有把握时可以做，但 commit 前必须通过 Dry Run Gate（`pnpm build` + `pnpm test`）。
-
-**Dry Run Gate（commit-msg hook 自动执行）**：Siamese签名的 commit 如果改动了白名单外的文件，hook 自动触发 `pnpm build` + `pnpm test`，失败则阻止 commit。其他猫不受此门禁影响。
+2026-10-15，You 在 `[thread-id]#private-source-id` 认可 F325 共审稿，退役按暹罗品种与签名施加的专属禁写、编辑白名单及 Dry Run Gate。现役成员沿共享风险路由与质量门禁工作；明确登记的成员限制仍由成员配置表达。旧协议保留此历史锚点，不再注入 L0。
 
 ---
 
@@ -478,7 +463,7 @@ commit body 补一行 `Why:` 说明决策理由。
 2. **等外部条件**（按 2a/2b 判断行动）。**外部条件 = 不在 cat-cafe roster 的实体**：云端 codex (`chatgpt-codex-connector[bot]`) / GitHub bot / PR check / CI / 长 build / 外部 webhook / API 响应。CLI 要退出但还需继续也走这条。**严禁**把外部 identity 投射成本地近似 proxy（例："球权在云端 codex"→ 不可 @ 本地同族猫的任何 variant）
    - **2a 轮询模式**：无结构化回调覆盖（如等 codex 接单 / EYES 出现）→ **调用 `cat_cafe_hold_ball(...)`** + 定时唤醒检查。必须调 MCP，口头说"我继续"不算
    - **2b 事件驱动模式**：已有结构化回调且已成功注册 server-bound typed wait → 纯依赖回调，**不调用 / 不续约 hold_ball**（F167 KD-27）。routing guard 只认同 invocation/owner/thread/subject 的有效 wait generation；“thread 里存在任意 tracker”不算出口
-   - **切换点**：轮询唤醒时发现 Codex connector 的 EYES > 0 → 停止续约，释放 hold，并用同 PR 的 numeric trigger comment id 注册 `cat_cafe_register_pr_tracking(..., when=[{kind:'pr_review_result_available', triggerCommentId}], nextStep=..., expiresAt=...)`。注册成功才能 clean stop；其他用户/bot 的 EYES、验证失败都继续 fail closed，不能用自然语言声明代替
+   - **切换点**：轮询唤醒时发现 Codex connector 的 EYES > 0 → 停止续约，释放 hold，并用同 PR 的 numeric trigger comment id 注册 已安装 GitHub 插件的 PR 跟踪工具（先 `tool_search`，提交唯一 `registrationId` 与 `when=[{kind:'pr_review_result_available', triggerCommentId}]`，其余字段按 schema）。注册成功才能 clean stop；其他用户/bot 的 EYES、验证失败都继续 fail closed，不能用自然语言声明代替
 3. **@operator** — **只在硬条件下**（详见 §10.4）：不可逆操作 / 愿景级决策 / 跨猫僵局。不是默认收尾出口
 
 **工作链上没有第四种。** "到我这里结束了" ≠ "链条结束了" —— 先问"哪只猫能接"，再决定用哪种出口。`@operator` 是硬条件出口，不是安全港。（链已闭合的对话终态轮见上方豁免——自然收尾优于假球。）
@@ -511,18 +496,20 @@ commit body 补一行 `Why:` 说明决策理由。
 
 识别标志：**如果你写完的句子换成"我决定 X"你能做——那你就该自决，别 @ operator**。`@operator` 不是"我不想决定"的出口，是"我没资格单方面决定"的出口。
 
-### A2A 状态迁移（只在状态迁移时发消息）
+### A2A 状态迁移（跨猫路由降噪）
+
+跨猫路由只在需要对方行动或状态迁移时发送。人或队友发起任务，进度都对人可见：需要工具时先用本轮正文说明要做什么，再调用工具；工作中更新关键发现、阻碍与下一步，不等交付才开口。进度说明无需 @ 或唤醒队友；不编造进度，不用工具计数代替说明。
 
 三类合法消息：
 - **BLOCKED**：真的卡住，需要对方现在决策
 - **REVIEW READY**：交接信息与适用的 review 证据已齐备
 - **DONE / HANDOFF**：任务结束，明确下一棒
 
-接球后静默执行到下一个状态迁移点。中间产出留在代码/文档里，不发。
+中间产出留在代码/文档里，不反复唤醒队友接收状态广播；当前对话中的说明继续沿上面的进度约定。
 
-声明 = 执行：说"我进 merge gate"就在同一个 turn 里做。要做就直接做，不先发消息宣布。
+声明 = 执行：说"我进 merge gate"就在同一个 turn 里做；进度说明不能替代行动。
 
-发消息前自检：这条是 BLOCKED / REVIEW READY / DONE 之一吗？不是 → 不发 → 继续做。
+发跨猫路由消息前自检：需要对方行动，或到了 BLOCKED / REVIEW READY / DONE 吗？不是 → 不唤醒队友 → 继续做。
 
 ### 路由方式
 
@@ -788,7 +775,7 @@ reviewer 下轮不用再 grep 同型——author 已扫过。
 2. 连续 2 次向 reviewer/operator声明"fixed/没问题"，但复验失败（假绿）；
 3. reviewer 被迫对同一可见症状 / 同一验收点重复验证 2 次；
 4. 连续 2 次发出"许可式前瞻消息"（"下一步做 X，ok 吗？"/ "你先别回我了"）且无产物交付；
-5. 接球后连续 2 条非状态迁移消息（中途进展汇报），且未进入 BLOCKED / REVIEW READY / DONE。
+5. 接球后连续 2 条不需对方行动的跨猫状态广播，且未进入 BLOCKED / REVIEW READY / DONE；面向operator的真实进度说明不在此列。
 
 **触发后动作**：
 1. reviewer 可直接发起 TAKEOVER（必须在当前 thread 显式宣布，不能靠默认理解）；

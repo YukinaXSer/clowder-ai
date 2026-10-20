@@ -58,7 +58,6 @@ describe('ChatInputAddMenu', () => {
       onAttach: vi.fn(),
       onAddContext: vi.fn(),
       onWhisperToggle: vi.fn(),
-      onGameClick: vi.fn(),
       onClose: vi.fn(),
       messageDisposition: createMessageDisposition(),
       ...props,
@@ -74,7 +73,7 @@ describe('ChatInputAddMenu', () => {
   it('groups context, upload and optional modes behind one menu', () => {
     render();
     const menu = document.querySelector('[data-testid="composer-add-menu"]');
-    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(5);
+    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(4);
     expect(menu?.textContent?.startsWith('添加')).toBe(false);
     expect(menu?.className).not.toContain('border-cafe');
     expect(menu?.className).toContain('bg-cafe-surface-canvas');
@@ -82,12 +81,11 @@ describe('ChatInputAddMenu', () => {
     expect(menu?.textContent).toContain('上传附件');
     expect(menu?.textContent).toContain('图片、文档或压缩包，最多 5 个');
     expect(menu?.textContent).toContain('悄悄话');
-    expect(menu?.textContent).toContain('游戏');
+    expect(menu?.textContent).not.toContain('游戏');
     expect(menu?.textContent).toContain('发送策略');
-    expect(menu?.textContent).toContain('排队等待');
   });
 
-  it('edits message strategy from the add menu without requiring active work', async () => {
+  it('persists the Thread strategy without an active-work gate', async () => {
     const callbacks = render();
     await act(async () => {
       document.querySelector<HTMLButtonElement>('[data-testid="message-disposition-trigger"]')?.click();

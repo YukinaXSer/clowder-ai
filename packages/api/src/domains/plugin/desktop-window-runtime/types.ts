@@ -1,4 +1,9 @@
+import type { DesktopWindowFailureReason } from './failure-reason.js';
+
+export type { DesktopWindowFailureReason } from './failure-reason.js';
+
 import type { DesktopWindowContribution } from '@clowder-ai/plugin-contract';
+import type { DesktopAppAssistOwner } from '../../concierge/live/host/companion-app-assist-owner.js';
 import type { StaticSurfaceServer } from '../external-runtime/static-surface-server.js';
 import type { VerifiedPluginPackage, VerifiedPluginPackageLocator } from '../external-runtime/types.js';
 import type { BuiltinBrokerConnection } from '../host-broker/builtin-loopback.js';
@@ -14,6 +19,7 @@ import type { DesktopWindowObserver } from './observer.js';
 import type { CompanionArchiveContract } from './published-companion-v2.js';
 
 export interface DesktopCompanionBridge {
+  readonly appAssist?: DesktopAppAssistOwner;
   request(input: unknown): Promise<CompanionReply>;
   close(): Promise<void>;
   observeVoice?(observation: HostVoiceObservation): Promise<void>;
@@ -21,18 +27,6 @@ export interface DesktopCompanionBridge {
 }
 
 export type DesktopWindowVisibility = 'visible' | 'hidden';
-export type DesktopWindowFailureReason =
-  | 'renderer-gone'
-  | 'unresponsive'
-  | 'window-closed'
-  | 'process-exit'
-  | 'request-timeout'
-  | 'protocol-violation'
-  | 'connection-ended'
-  | 'heartbeat-expired'
-  | 'poll-failed'
-  | 'surface-unavailable'
-  | 'unknown';
 export interface DesktopWindowFailure {
   readonly reason: DesktopWindowFailureReason;
   readonly exitCode: number | null;
@@ -53,6 +47,7 @@ export interface DesktopWindowFailure {
   readonly lastStage?: string | null;
 }
 export interface DesktopWindowLaunch {
+  readonly appAssist?: DesktopAppAssistOwner;
   readonly url: string;
   readonly presentation: DesktopWindowContribution['presentation'];
   /** Present only for the exact verified public archive that carries the new contract. */

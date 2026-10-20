@@ -1,3 +1,13 @@
+import {
+  type CompanionDeliveryAcceptance,
+  type CompanionDraftSubmission,
+  companionDeliveryMatches,
+  companionDeliveryReceiptSchema,
+  companionSubmissionKey,
+  readCompanionDraftSubmissions,
+  type StoredCompanionDeliveryReceipt,
+} from '../companion-submission-state.js';
+import { type MessageEvidenceProjection, projectMessageEvidence } from '../message-evidence-projection.js';
 /**
  * Message Store
  * 内存消息存储，供 MCP 回传工具 get_thread_context / get_pending_mentions 使用
@@ -29,10 +39,6 @@ import type {
   SchedulerMessageExtra,
 } from '@cat-cafe/shared';
 import {
-  collectiveOwnerAdmissionV1Schema,
-  collectiveSourceIdentitySchema,
-  collectiveWorkDelegationV1Schema,
-  collectiveWorkInvocationV1Schema,
   custodyOfferV1Schema,
   entrustedWorkHumanTerminalReceiptV1Schema,
   evolutionPreparationSubmissionV1Schema,
@@ -50,8 +56,19 @@ import {
 } from '../../agents/invocation/queue-ledger/QueueLedger.js';
 import type { MessageMetadata } from '../../types.js';
 import { compareCursors, cursorFor, parseCursor } from '../cursor.js';
+import {
+  type LifecycleAppendRecoveryInput,
+  type LifecycleAppendRecoveryResult,
+  prepareLifecycleAppendRecovery,
+} from '../lifecycle-append-recovery.js';
+import {
+  type LifecycleWakeCoverageInput,
+  type LifecycleWakeCoverageResult,
+  prepareLifecycleWakeCoverage,
+} from '../lifecycle-wake-coverage.js';
 import type { MessageDeliveryBoundary } from '../message-delivery-boundary.js';
 import { messageFrom } from '../message-from.js';
+import { storedMessageSource } from '../message-source.js';
 import { notifyMessageTimelineChange } from '../notify-message-timeline-change.js';
 import { type UserMentionHandlingMetadata, UserMentionIndex } from '../user-mention-index.js';
 import {
@@ -63,6 +80,7 @@ import {
   resolveDeliveryTimelineScore,
   resolveThreadMessageVisibility,
 } from '../visibility.js';
+import { ThreadMessageTimelineIndex } from './ThreadMessageTimelineIndex.js';
 // Single source of truth: ThreadStore.ts owns DEFAULT_THREAD_ID
 import { DEFAULT_THREAD_ID } from './ThreadStore.js';
 import type { TurnExecutionMessageProjection } from './TurnExecutionStore.js';
@@ -99,6 +117,8 @@ export interface MessageIdScanPage {
 export const COORDINATION_TERMINAL_SCAN_PAGE_SIZE = 100;
 
 export interface ThreadMessageReadOptions {
+  /** Artifact reads need publication/visibility/receipt fields, never conversation text or tool traces. */
+  artifactProjection?: boolean;
   /** Include queued cat-authored speech that is already published to the timeline. */
   includeQueuedCatMessages?: boolean;
   /** Include durable queued owner work (user or Host connector ingress) in the browser timeline only. */
@@ -144,6 +164,7 @@ export interface OwnerComposerDraft {
   text: string;
   contentBlocks?: readonly MessageContent[];
   replyTo?: string;
+  companionSubmissions?: readonly CompanionDraftSubmission[];
   updatedAt: number;
 }
 
@@ -159,6 +180,7 @@ export interface PutOwnerComposerDraftInput {
   text: string;
   contentBlocks?: readonly MessageContent[];
   replyTo?: string;
+  companionSubmissions?: readonly CompanionDraftSubmission[];
   updatedAt: number;
 }
 
@@ -273,6 +295,8 @@ export interface StoredMessage {
   /** Compatibility projection for existing UI/index consumers; derived from from.kind. */
   catId: CatId | null;
   content: string;
+  /** Host acceptance fact, written only by the original delivery producer. */
+  companionDeliveryReceipt?: StoredCompanionDeliveryReceipt;
   /** #1354: canonical Queue → History → Active Run lifecycle projection. */
   lifecycle?: LifecycleStoredMessageMetadata;
   /** Rich content blocks (text, images, code). When absent, use content string. */
@@ -293,8 +317,15 @@ export interface StoredMessage {
       parentInvocationId: string;
       isFailureReport: boolean;
     };
+    /** Additional callers actually covered by this same response, with admission provenance. */
+    coveredA2AFailureReturns?: Omit<
+      NonNullable<NonNullable<StoredMessage['extra']>['a2aFailureReturn']>,
+      'parentInvocationId'
+    >[];
     /** Immutable Live ingress receipt, not executable media or an ownership record. */
     liveAdmission?: { sessionId: string; targetId: string };
+    /** HTTP conversation request provenance; prose expansion is derived, explicit selection is identity. */
+    routingTargetSource?: 'prose' | 'explicit';
     /** F309: a confirmed human request; technical coordinates resolve through the request ref. */
     contentModificationRequestV1?: import('@cat-cafe/shared').ContentModificationSourceMessageV1;
     /** F309: immutable Host projection of one candidate or disposition event. */
@@ -323,11 +354,7 @@ export interface StoredMessage {
         }
     );
     /** F290: canonical owner receipt and exact Task execution trigger; written by owner admission routes only. */
-    collectiveOwnerAdmissionV1?: import('@cat-cafe/shared').CollectiveOwnerAdmissionV1;
-    collectiveWorkInvocationV1?: import('@cat-cafe/shared').CollectiveWorkInvocationV1;
     /** F290: authenticated Task owner explicitly names home Cats allowed to continue this private Work. */
-    collectiveWorkDelegationV1?: import('@cat-cafe/shared').CollectiveWorkDelegationV1;
-    collectiveAuthorizationInvalid?: true;
     /** F306 durable provider-neutral event; native wire vocabulary is never stored here. */
     semanticEvent?: ProviderSemanticEvent;
     /** F306 conversation return provenance; canonical content remains on this one Message. */
@@ -351,6 +378,8 @@ export interface StoredMessage {
       invocationId: string;
     };
     rich?: RichMessageExtra;
+    /** Outbound media owns publication until durable materialization completes. */
+    mediaPublication?: 'deferred';
     /** #1354 structured routing feedback retained from Queue payload into History. */
     routingWarnings?: readonly CatRoutingError[];
     /** Fresh source created by an owner-authorized cloud delivery retry. */
@@ -373,7 +402,7 @@ export interface StoredMessage {
       speechContent?: string;
     };
     /** Typed causal origin for cat output; freshness must never infer this from prose or timing. */
-    causal?: { kind: 'invocation_reply'; triggerMessageId: string };
+    causal?: { kind: 'invocation_reply'; triggerMessageId: string; triggerThreadId?: string };
     /** Host-admitted proactive dot request. The root message owns its reply scope. */
     dotAsk?: {
       v: 1;
@@ -399,6 +428,8 @@ export interface StoredMessage {
     entrustedWorkHumanTerminalReceiptV1?: EntrustedWorkHumanTerminalReceiptV1;
     /** F311: immutable F117-owned preparation body. Generic extra/stream patches cannot mutate it. */
     evolutionPreparationSubmissionV1?: EvolutionPreparationSubmissionV1;
+    /** F311 receipt-derived navigation source; never rollback authority. */
+    evolutionUseSourceV1?: import('@cat-cafe/shared').EvolutionUseSourceV1;
     /** Durable child execution projection used to distinguish guard turns after F5. */
     turnExecution?: TurnExecutionMessageProjection;
     /** Child executions that affected this visible turn without owning/copying its body. */
@@ -489,6 +520,8 @@ export interface StoredMessage {
      *  domains/messaging/envelope.ts (PluginMessageExtra); kept structural here so the
      *  cats domain does not depend on the messaging domain. */
     pluginMessage?: {
+      /** Plugin presentation is payload data, never a second sender identity. */
+      presentation?: ConnectorSource;
       instanceId: string;
       revision: number;
       provenance: Record<string, unknown>;
@@ -715,6 +748,7 @@ export type AppendMessageInput = Omit<
   | 'deliveryStatus'
   | 'recall'
   | 'sourceParseFailure'
+  | 'companionDeliveryReceipt'
 > & {
   from: MessageFrom;
   threadId?: string;
@@ -725,6 +759,8 @@ export type AppendMessageInput = Omit<
    * Reusing the same token returns the original stored message.
    */
   idempotencyKey?: string;
+  /** Host-owned deferred publication only. Reserved while the draft is outside the message store. */
+  reservedId?: string;
 };
 
 /** Host-only dot requests share an owner/attempt namespace across target threads. */
@@ -757,6 +793,7 @@ export function canonicalizeAppendMessageInput(input: AppendMessageInput): Canon
 export type QueueLedgerAdmissionFactory = (
   messageId: string,
   replayEntries?: readonly QueueLedgerEntry[],
+  replaySource?: StoredMessage,
 ) => readonly QueueLedgerEntry[];
 
 export type QueueLedgerMessageAdmissionResult =
@@ -779,6 +816,14 @@ export type QueueLedgerLifecycleAdmissionResult =
   | { kind: 'full' }
   | Exclude<CommitLifecycleResponseTerminalResult, { kind: 'applied' | 'replayed' }>;
 
+export function lifecycleResponseInputsChanged(current: StoredMessage, patch: LifecycleResponseTerminalPatch): boolean {
+  return (
+    patch.expectedInputMessageIds !== undefined &&
+    (current.lifecycle?.kind !== 'response' ||
+      !isDeepStrictEqual(current.lifecycle.inputMessageIds, patch.expectedInputMessageIds))
+  );
+}
+
 export function prepareLifecycleResponseTerminalWithLedgerTargets(
   current: StoredMessage,
   patch: LifecycleResponseTerminalPatch,
@@ -797,6 +842,8 @@ export function prepareLifecycleResponseTerminalWithLedgerTargets(
   if (current.lifecycle.invocationId !== patch.invocationId) {
     return { kind: 'conflict', reason: 'invocation_mismatch', message: structuredClone(current) };
   }
+  if (lifecycleResponseInputsChanged(current, patch))
+    return { kind: 'conflict', reason: 'inputs_changed', message: structuredClone(current) };
   if (
     !Number.isFinite(patch.completedAt) ||
     patch.completedAt < current.lifecycle.startedAt ||
@@ -828,8 +875,29 @@ export function prepareLifecycleResponseTerminalWithLedgerTargets(
     : { kind: 'conflict', reason: 'different_terminal', message: structuredClone(current) };
 }
 
+export function reusesProseRouting(existing: StoredMessage, incoming: AppendMessageInput): boolean {
+  return (
+    existing.extra?.routingTargetSource === 'prose' &&
+    incoming.extra?.routingTargetSource === 'prose' &&
+    existing.from?.kind === 'user' &&
+    incoming.from.kind === 'user' &&
+    !existing.visibility &&
+    !incoming.visibility &&
+    !existing.extra.liveAdmission &&
+    !incoming.extra.liveAdmission &&
+    !existing.extra.messageBundle &&
+    !incoming.extra.messageBundle
+  );
+}
+
 export function assertQueueMessageReplay(existing: StoredMessage, incoming: AppendMessageInput): void {
   const canonical = canonicalizeAppendMessageInput(incoming);
+  if (
+    existing.extra?.routingTargetSource &&
+    existing.extra.routingTargetSource !== canonical.extra?.routingTargetSource
+  ) {
+    throw new Error(`Queue admission identity conflict for replayed message ${existing.id}`);
+  }
   for (const key of [
     'from',
     'content',
@@ -840,6 +908,7 @@ export function assertQueueMessageReplay(existing: StoredMessage, incoming: Appe
     'replyTo',
     'source',
   ] as const) {
+    if (key === 'mentions' && reusesProseRouting(existing, canonical)) continue;
     if (!isDeepStrictEqual(existing[key], canonical[key])) {
       throw new Error(`Queue admission identity conflict for replayed message ${existing.id}`);
     }
@@ -888,37 +957,6 @@ export function prepareQueueLedgerSourceLifecycle(
   message: StoredMessage,
   entries: readonly QueueLedgerEntry[],
 ): LifecycleStoredMessageMetadata {
-  // Scope limits execution; it is not a grant manufactured by the Queue label.
-  // Bind it to immutable History source evidence before either store commits.
-  for (const entry of entries) {
-    if (entry.execution.executionScope && !isDeepStrictEqual(entry.from, message.from)) {
-      throw new Error('Collective Queue admission sender must match its durable source');
-    }
-    if (entry.execution.executionScope === 'collective-participation') {
-      const source = collectiveSourceIdentitySchema.safeParse(message.source?.meta?.participation);
-      if (
-        !source.success ||
-        message.source?.connector !== 'collective' ||
-        message.from?.kind !== 'external' ||
-        message.from.connectorId !== 'collective' ||
-        entry.targets.length !== 1 ||
-        entry.targets[0] !== source.data.catId
-      ) {
-        throw new Error('Collective participation Queue admission requires its exact durable source and target');
-      }
-    } else if (entry.execution.executionScope === 'collective-work') {
-      const invocation = collectiveWorkInvocationV1Schema.safeParse(message.extra?.collectiveWorkInvocationV1);
-      if (
-        !invocation.success ||
-        message.from?.kind !== 'system' ||
-        message.from.service !== 'collective-work' ||
-        message.source ||
-        message.extra?.collectiveAuthorizationInvalid
-      ) {
-        throw new Error('Collective work Queue admission requires its durable invocation receipt');
-      }
-    }
-  }
   const targetIds = entries.flatMap((entry) => entry.targets);
   const dispatchedTargets = new Set(message.lifecycle?.dispatchRefs?.map((ref) => ref.targetId) ?? []);
   if (targetIds.some((targetId) => dispatchedTargets.has(targetId))) {
@@ -935,7 +973,16 @@ export function prepareQueueLedgerSourceLifecycle(
   return assigned.lifecycle;
 }
 
+export class LifecycleResponseInputsChangedError extends Error {
+  constructor() {
+    super('lifecycle response terminal conflict: inputs_changed');
+    this.name = 'LifecycleResponseInputsChangedError';
+  }
+}
+
 export interface LifecycleResponseTerminalPatch {
+  /** Commit-only compare-and-set fence; never persisted in History. */
+  expectedInputMessageIds?: readonly string[];
   invocationId: string;
   status: 'completed' | 'failed' | 'canceled' | 'interrupted';
   completedAt: number;
@@ -956,13 +1003,14 @@ export type CommitLifecycleResponseTerminalResult =
   | { kind: 'applied' | 'replayed'; message: StoredMessage }
   | {
       kind: 'conflict';
-      reason: 'not_response' | 'invocation_mismatch' | 'invalid_terminal' | 'different_terminal';
+      reason: 'not_response' | 'invocation_mismatch' | 'invalid_terminal' | 'different_terminal' | 'inputs_changed';
       message: StoredMessage;
     }
   | { kind: 'not_found' };
 
 export type LifecycleInputDispatchPatch = {
   inputRead?: LifecycleInputReadReceipt;
+  appendAcceptance?: 'pending' | 'accepted';
   orderKey: string;
   producerInvocationId?: string;
   targetId: string;
@@ -988,6 +1036,7 @@ export interface LifecycleAppendAdmissionInput {
     responseMessageId: string;
     /** Optional adapter capability; presentation only. */
     inputReadSupported?: boolean;
+    awaitingAcceptance?: boolean;
     /** Exact time this source was admitted to the target response. */
     dispatchedAt: number;
   }[];
@@ -999,23 +1048,6 @@ export type CommitLifecycleAppendAdmissionResult =
       kind: 'conflict';
       reason: 'invalid_input' | 'scope_mismatch' | 'input_lifecycle_conflict' | 'response_lifecycle_conflict';
     }
-  | { kind: 'not_found' };
-
-export interface LifecycleAppendRejectionInput {
-  threadId: string;
-  entryId: string;
-  inputMessageIds: readonly string[];
-  failureMessageIds: readonly string[];
-  run: {
-    targetId: string;
-    invocationId: string;
-    responseMessageId: string;
-  };
-}
-
-export type CommitLifecycleAppendRejectionResult =
-  | { kind: 'applied' | 'replayed'; messages: StoredMessage[] }
-  | { kind: 'conflict'; reason: 'invalid_input' | 'scope_mismatch' | 'lifecycle_conflict' }
   | { kind: 'not_found' };
 
 type AssignLifecycleDispatchTargetsResult =
@@ -1063,7 +1095,7 @@ export function assignLifecycleDispatchTargetsMetadata(
 export interface LifecyclePreAdmissionFailureInput {
   sourceMessageId: string;
   expectedEntryId: string;
-  /** Scalar ledger target; empty only for a targetless conversation row. */
+  /** Pending ledger recipients; empty only for a targetless conversation row. */
   requestedTargets: readonly string[];
   reason: LifecycleDeliveryFailureReason;
   content: string;
@@ -1167,6 +1199,8 @@ export function advanceLifecycleInputDispatchMetadata(
 ): LifecycleInputDispatchMetadataResult {
   if (patch.inputRead !== undefined && !isLifecycleInputReadReceipt(patch.inputRead))
     return { kind: 'conflict', reason: 'invalid_transition' };
+  if (patch.appendAcceptance !== undefined && !['pending', 'accepted'].includes(patch.appendAcceptance))
+    return { kind: 'conflict', reason: 'invalid_transition' };
   const identity = {
     kind: 'input' as const,
     orderKey: patch.orderKey,
@@ -1186,6 +1220,7 @@ export function advanceLifecycleInputDispatchMetadata(
             statusMessageId: patch.statusMessageId,
             ...(patch.dispatchedAt !== undefined ? { dispatchedAt: patch.dispatchedAt } : {}),
             ...(patch.inputRead ? { inputRead: patch.inputRead } : {}),
+            ...(patch.appendAcceptance ? { appendAcceptance: patch.appendAcceptance } : {}),
           },
         ],
       },
@@ -1216,6 +1251,7 @@ export function advanceLifecycleInputDispatchMetadata(
             statusMessageId: patch.statusMessageId,
             ...(patch.dispatchedAt !== undefined ? { dispatchedAt: patch.dispatchedAt } : {}),
             ...(patch.inputRead ? { inputRead: patch.inputRead } : {}),
+            ...(patch.appendAcceptance ? { appendAcceptance: patch.appendAcceptance } : {}),
           },
         ],
       },
@@ -1223,6 +1259,17 @@ export function advanceLifecycleInputDispatchMetadata(
   }
   if (existing.statusMessageId !== patch.statusMessageId) {
     return { kind: 'conflict', reason: 'status_message_mismatch' };
+  }
+  if (patch.appendAcceptance === 'accepted' && existing.appendAcceptance === 'pending') {
+    return {
+      kind: 'applied',
+      lifecycle: {
+        ...current,
+        dispatchRefs: refs.map((ref) =>
+          ref.targetId === patch.targetId ? { ...ref, appendAcceptance: 'accepted' } : ref,
+        ),
+      },
+    };
   }
   // Read evidence cannot advance or revert execution phase. A terminal commit
   // may race the observer, so preserve the latest durable phase atomically.
@@ -1300,11 +1347,16 @@ function appendLifecycleResponseInputsMetadata(
     return { kind: 'conflict' };
   }
   if (hasEntry) return { kind: 'replayed' };
+  if (
+    input.inputMessageIds.length === 0 &&
+    (current.latestInputTimelineOrderAt ?? 0) >= input.latestInputTimelineOrderAt
+  )
+    return { kind: 'replayed' };
   return {
     kind: 'applied',
     lifecycle: {
       ...current,
-      inputEntryIds: [...current.inputEntryIds, input.entryId],
+      inputEntryIds: input.inputMessageIds.length ? [...current.inputEntryIds, input.entryId] : current.inputEntryIds,
       inputMessageIds: [...current.inputMessageIds, ...input.inputMessageIds],
       latestInputTimelineOrderAt: Math.max(current.latestInputTimelineOrderAt ?? 0, input.latestInputTimelineOrderAt),
     },
@@ -1351,6 +1403,7 @@ export function prepareLifecycleAppendAdmission(
         statusMessageId: run.responseMessageId,
         dispatchedAt: run.dispatchedAt,
         ...(run.inputReadSupported ? { inputRead: { status: 'pending' as const } } : {}),
+        ...(run.awaitingAcceptance ? { appendAcceptance: 'pending' as const } : {}),
       });
       if (transition.kind === 'conflict') return { kind: 'conflict', reason: 'input_lifecycle_conflict' };
       if (transition.kind === 'applied') {
@@ -1383,109 +1436,6 @@ export function prepareLifecycleAppendAdmission(
   return { kind: 'prepared', lifecycles, replayed };
 }
 
-function removeLifecycleResponseInputs(
-  current: Extract<LifecycleStoredMessageMetadata, { kind: 'response' }>,
-  entryId: string,
-  inputMessageIds: readonly string[],
-): { kind: 'applied'; lifecycle: typeof current } | { kind: 'replayed' } | { kind: 'conflict' } {
-  const hasEntry = current.inputEntryIds.includes(entryId);
-  const ids = new Set(inputMessageIds);
-  const present = current.inputMessageIds.filter((id) => ids.has(id));
-  if (!hasEntry && present.length === 0) return { kind: 'replayed' };
-  if (!hasEntry || present.length !== ids.size) return { kind: 'conflict' };
-  return {
-    kind: 'applied',
-    lifecycle: {
-      ...current,
-      inputEntryIds: current.inputEntryIds.filter((id) => id !== entryId),
-      inputMessageIds: current.inputMessageIds.filter((id) => !ids.has(id)),
-    },
-  };
-}
-
-export function prepareLifecycleAppendRejection(
-  messages: readonly StoredMessage[],
-  input: LifecycleAppendRejectionInput,
-):
-  | { kind: 'prepared'; lifecycles: LifecycleStoredMessageMetadata[]; replayed: boolean }
-  | CommitLifecycleAppendRejectionResult {
-  if (
-    !input.threadId ||
-    !input.entryId ||
-    !input.run.targetId ||
-    !input.run.invocationId ||
-    !input.run.responseMessageId ||
-    input.inputMessageIds.length === 0 ||
-    input.failureMessageIds.length !== input.inputMessageIds.length ||
-    new Set(input.inputMessageIds).size !== input.inputMessageIds.length ||
-    new Set(input.failureMessageIds).size !== input.failureMessageIds.length
-  ) {
-    return { kind: 'conflict', reason: 'invalid_input' };
-  }
-  if (messages.length !== input.inputMessageIds.length + 1) return { kind: 'not_found' };
-  if (messages.some((message) => message.threadId !== input.threadId)) {
-    return { kind: 'conflict', reason: 'scope_mismatch' };
-  }
-
-  const lifecycles: LifecycleStoredMessageMetadata[] = [];
-  let replayed = true;
-  for (let index = 0; index < input.inputMessageIds.length; index += 1) {
-    const lifecycle = messages[index]!.lifecycle;
-    if (!lifecycle || lifecycle.kind === 'delivery_failure') {
-      return { kind: 'conflict', reason: 'lifecycle_conflict' };
-    }
-    const refs = lifecycle.dispatchRefs ?? [];
-    const matching = refs.filter((ref) => ref.targetId === input.run.targetId);
-    if (matching.length !== 1) return { kind: 'conflict', reason: 'lifecycle_conflict' };
-    const current = matching[0]!;
-    const failureMessageId = input.failureMessageIds[index]!;
-    if (current.phase === 'settled' && current.statusMessageId === failureMessageId) {
-      lifecycles.push(lifecycle);
-      continue;
-    }
-    if (current.phase !== 'dispatched' || current.statusMessageId !== input.run.responseMessageId) {
-      return { kind: 'conflict', reason: 'lifecycle_conflict' };
-    }
-    replayed = false;
-    lifecycles.push({
-      ...lifecycle,
-      dispatchRefs: refs.map((ref) =>
-        ref.targetId === input.run.targetId
-          ? {
-              targetId: input.run.targetId,
-              phase: 'settled' as const,
-              statusMessageId: failureMessageId,
-              dispatchedAt: ref.dispatchedAt,
-            }
-          : ref,
-      ),
-    });
-  }
-
-  const response = messages[input.inputMessageIds.length]!;
-  const responseLifecycle = response.lifecycle;
-  if (
-    responseLifecycle?.kind !== 'response' ||
-    responseLifecycle.targetId !== input.run.targetId ||
-    responseLifecycle.invocationId !== input.run.invocationId
-  ) {
-    return { kind: 'conflict', reason: 'lifecycle_conflict' };
-  }
-  const publicInputIds = messages
-    .slice(0, input.inputMessageIds.length)
-    .filter((message) => message.visibility !== 'whisper')
-    .map((message) => message.id);
-  const removal = removeLifecycleResponseInputs(responseLifecycle, input.entryId, publicInputIds);
-  if (removal.kind === 'conflict') return { kind: 'conflict', reason: 'lifecycle_conflict' };
-  if (removal.kind === 'replayed') {
-    lifecycles.push(responseLifecycle);
-  } else {
-    replayed = false;
-    lifecycles.push(removal.lifecycle);
-  }
-  return { kind: 'prepared', lifecycles, replayed };
-}
-
 export function lifecycleInputIdentityForStoredMessage(
   message: StoredMessage,
 ): Pick<LifecycleInputDispatchPatch, 'orderKey' | 'producerInvocationId'> {
@@ -1514,6 +1464,7 @@ export async function commitLifecycleResponseFromAppendInput(
     status: LifecycleResponseTerminalPatch['status'];
     completedAt: number;
     reason?: string;
+    expectedInputMessageIds?: readonly string[];
   },
   message: AppendMessageInput,
 ): Promise<StoredMessage> {
@@ -1530,6 +1481,7 @@ export async function commitLifecycleResponseFromTerminalPatch(
   terminalPatch: LifecycleResponseTerminalPatch,
 ): Promise<StoredMessage> {
   const result = await store.commitLifecycleResponseTerminal(responseMessageId, terminalPatch);
+  if (result.kind === 'conflict' && result.reason === 'inputs_changed') throw new LifecycleResponseInputsChangedError();
   if (result.kind !== 'applied' && result.kind !== 'replayed') {
     throw new Error(
       `lifecycle response terminal conflict: ${result.kind}:${'reason' in result ? result.reason : 'missing'}`,
@@ -1583,6 +1535,7 @@ export function lifecycleResponseTerminalPatchFromAppendInput(
     status: LifecycleResponseTerminalPatch['status'];
     completedAt: number;
     reason?: string;
+    expectedInputMessageIds?: readonly string[];
   },
   message: AppendMessageInput,
 ): LifecycleResponseTerminalPatch {
@@ -1600,6 +1553,7 @@ export function lifecycleResponseTerminalPatchFromAppendInput(
   }
   return {
     invocationId,
+    ...(terminal.expectedInputMessageIds ? { expectedInputMessageIds: terminal.expectedInputMessageIds } : {}),
     status: terminal.status,
     completedAt: terminal.completedAt,
     ...(terminal.reason ? { reason: terminal.reason } : {}),
@@ -1792,6 +1746,7 @@ export function isValidCustodyOfferTransition(
 
 /** Validate every caller-controlled field that affects persistent message order. */
 export function assertValidAppendMessageInput(msg: AppendMessageInput): void {
+  if ('companionDeliveryReceipt' in msg) throw new TypeError('Host delivery acceptance requires its original producer');
   assertValidAppendDeliveryMetadata(msg);
   if (msg.extra?.dotAsk) {
     const ask = msg.extra.dotAsk;
@@ -1813,42 +1768,6 @@ export function assertValidAppendMessageInput(msg: AppendMessageInput): void {
   assertValidStoredMessageTimestamp(msg.timestamp);
   if (msg.lifecycle !== undefined && !isLifecycleStoredMessageMetadata(msg.lifecycle)) {
     throw new TypeError('append() lifecycle metadata is invalid');
-  }
-  const ownerAdmission = msg.extra?.collectiveOwnerAdmissionV1;
-  const workInvocation = msg.extra?.collectiveWorkInvocationV1;
-  const workDelegation = msg.extra?.collectiveWorkDelegationV1;
-  if (workDelegation !== undefined && (ownerAdmission !== undefined || workInvocation !== undefined)) {
-    throw new TypeError('Collective Work Message cannot combine Host authority and home delegation carriers');
-  }
-  if (ownerAdmission !== undefined) {
-    if (msg.from.kind !== 'user' || msg.source || msg.extra?.collectiveAuthorizationInvalid) {
-      throw new TypeError('Collective owner receipts require a Host-owned user Message');
-    }
-    collectiveOwnerAdmissionV1Schema.parse(ownerAdmission);
-  }
-  if (workInvocation !== undefined) {
-    if (
-      msg.from.kind !== 'system' ||
-      msg.from.service !== 'collective-work' ||
-      msg.source ||
-      msg.extra?.collectiveAuthorizationInvalid
-    ) {
-      throw new TypeError('Collective Work invocations require the canonical system producer');
-    }
-    collectiveWorkInvocationV1Schema.parse(workInvocation);
-  }
-  if (workDelegation !== undefined) {
-    const parsed = collectiveWorkDelegationV1Schema.parse(workDelegation);
-    if (
-      msg.from.kind !== 'agent' ||
-      msg.from.catId !== parsed.ownerCatId ||
-      msg.source ||
-      msg.origin !== 'callback' ||
-      msg.extra?.collectiveAuthorizationInvalid ||
-      JSON.stringify([...msg.mentions].sort()) !== JSON.stringify([...parsed.targetCatIds].sort())
-    ) {
-      throw new TypeError('Collective Work delegation requires an exact authenticated owner callback Message');
-    }
   }
   const custody = msg.extra?.custodyOfferV1;
   if (custody) {
@@ -1927,10 +1846,6 @@ export function mergeMessageExtra(
     evolutionPreparationSubmissionV1: _stripPreparation,
     dotAsk: _stripDotAsk,
     deliveryBoundary: _stripBoundary,
-    collectiveOwnerAdmissionV1: _stripCollectiveAdmission,
-    collectiveWorkInvocationV1: _stripCollectiveInvocation,
-    collectiveWorkDelegationV1: _stripCollectiveDelegation,
-    collectiveAuthorizationInvalid: _stripCollectiveInvalid,
     ...incomingHost
   } = incoming ?? {};
   const merged = { ...(existing ?? {}), ...incomingHost };
@@ -2228,6 +2143,12 @@ export interface IMessageStore {
   restore(id: string): StoredMessage | null | Promise<StoredMessage | null>;
   /** F35: Reveal whispers in a thread sent by userId (set revealedAt). Returns count revealed. */
   revealWhispers(threadId: string, userId: string): number | Promise<number>;
+  /** Host producer only: persist confirmed transport acceptance beside the original, unchanged user Message. */
+  recordCompanionDeliveryAcceptance(
+    id: string,
+    input: CompanionDeliveryAcceptance,
+  ): StoredMessage | null | Promise<StoredMessage | null>;
+
   /** F096: Update message extra data (for interactive block state persistence). Returns null if not found. */
   updateExtra(id: string, extra: HostMessageExtra): StoredMessage | null | Promise<StoredMessage | null>;
   /** F310: atomically fence source body and prior custody state before changing the source-owned carrier. */
@@ -2264,10 +2185,14 @@ export interface IMessageStore {
   commitLifecycleAppendAdmission(
     input: LifecycleAppendAdmissionInput,
   ): CommitLifecycleAppendAdmissionResult | Promise<CommitLifecycleAppendAdmissionResult>;
-  /** Compensate a provider rejection without leaving the input attached to a response that never read it. */
-  commitLifecycleAppendRejection(
-    input: LifecycleAppendRejectionInput,
-  ): CommitLifecycleAppendRejectionResult | Promise<CommitLifecycleAppendRejectionResult>;
+  commitLifecycleAppendRecovery(
+    input: LifecycleAppendRecoveryInput,
+    ledgerStore: QueueLedgerStore,
+  ): LifecycleAppendRecoveryResult | Promise<LifecycleAppendRecoveryResult>;
+  commitLifecycleWakeCoverage(
+    input: LifecycleWakeCoverageInput,
+    ledgerStore: QueueLedgerStore,
+  ): LifecycleWakeCoverageResult | Promise<LifecycleWakeCoverageResult>;
   /**
    * F098-D: CAS transition queued → delivered at an admitted timestamp.
    * `deliveryTransitioned` is true only when this call won; false on a state no-op.
@@ -2375,6 +2300,9 @@ function buildRecallDraft(
     threadId: input.threadId,
     revision: actualRevision + 1,
     text: `${prefix}${message.content}`,
+    ...(existingDraft?.companionSubmissions
+      ? { companionSubmissions: structuredClone(existingDraft.companionSubmissions) }
+      : {}),
     ...(contentBlocks.length > 0 ? { contentBlocks } : {}),
     ...(replyTo ? { replyTo } : {}),
     updatedAt: input.recalledAt,
@@ -2394,6 +2322,7 @@ function redactRecalledMessage(message: StoredMessage, recall: MessageRecallMark
   delete message.extra;
   delete message.thinking;
   delete message.replyTo;
+  delete message.companionDeliveryReceipt;
   message.deliveryStatus = 'canceled';
   message._tombstone = true;
   message.recall = recall;
@@ -2457,6 +2386,7 @@ export function prepareLifecycleResponseTerminalMessage(
 
 export class MessageStore {
   private readonly userMentionIndex = new UserMentionIndex();
+  private readonly threadTimeline = new ThreadMessageTimelineIndex();
   private mentionCutover: number | undefined;
 
   getLastUserMentionHandling(userId: string) {
@@ -2585,6 +2515,7 @@ export class MessageStore {
 
   private pruneIdempotencyIndexForMessageIds(messageIds: readonly string[]): void {
     if (messageIds.length === 0) return;
+    for (const id of messageIds) this.threadTimeline.remove(id);
     const removedIds = new Set(messageIds);
     for (const [key, value] of this.idempotencyIndex.entries()) {
       if (removedIds.has(value)) {
@@ -2595,6 +2526,7 @@ export class MessageStore {
 
   /** Publish a bodyless processing placeholder only when its final body is durable. */
   private publishLifecycleResponse(message: StoredMessage): void {
+    this.threadTimeline.upsert(message);
     if (!this.visibilitySeq.has(message.id)) {
       this.visibilitySeqCounter = Math.max(this.visibilitySeqCounter + 1, Date.now());
       this.visibilitySeq.set(message.id, this.visibilitySeqCounter);
@@ -2625,7 +2557,7 @@ export class MessageStore {
       : null;
     if (existing) {
       assertQueueMessageReplay(existing, msg);
-      const identities = [...buildAdmission(existing.id)];
+      const identities = [...buildAdmission(existing.id, undefined, existing)];
       const persisted = identities.map((entry) => ledgerStore.getNow(entry.threadId, entry.id));
       // A receiver may retire pending work while this replay is resolving.
       // The committed source remains the acknowledgement; never recreate its row.
@@ -2636,6 +2568,7 @@ export class MessageStore {
         ...buildAdmission(
           existing.id,
           persisted.filter((entry): entry is QueueLedgerEntry => entry !== null),
+          existing,
         ),
       ];
       if (
@@ -2732,6 +2665,7 @@ export class MessageStore {
     }
     message.lifecycle = structuredClone(lifecycle);
     if (!preservesPublishedAgent) message.deliveryStatus = 'queued';
+    this.threadTimeline.upsert(message);
     return { outcome: 'enqueued', message: { ...message }, entries: admitted.entries, deduped: false };
   }
 
@@ -2790,7 +2724,7 @@ export class MessageStore {
   private appendWithReservedId(
     msg: AppendMessageInput,
     reservedId?: string,
-    options?: { deferVisibility?: boolean },
+    options?: { deferVisibility?: boolean; deferAppendNotification?: boolean },
   ): StoredMessage {
     const normalizedMessage = canonicalizeAppendMessageInput(msg);
     const threadId = normalizedMessage.threadId ?? DEFAULT_THREAD_ID;
@@ -2810,7 +2744,13 @@ export class MessageStore {
       }
     }
 
-    const { idempotencyKey, ...payload } = normalizedMessage;
+    const { idempotencyKey, reservedId: mediaReservedId, ...payload } = normalizedMessage;
+    if (mediaReservedId !== undefined && !/^\d{16}-\d{6,}-[0-9a-f]{8}$/.test(mediaReservedId))
+      throw new TypeError('reserved message id has invalid shape');
+    if (reservedId !== undefined && mediaReservedId !== undefined && reservedId !== mediaReservedId)
+      throw new Error('reserved message id conflict');
+    reservedId ??= mediaReservedId;
+    if (reservedId !== undefined && this.getById(reservedId)) throw new Error('reserved message id collision');
     void idempotencyKey;
     const stored: StoredMessage = {
       ...payload,
@@ -2818,6 +2758,7 @@ export class MessageStore {
       threadId,
     };
     this.messages.push(stored);
+    this.threadTimeline.upsert(stored);
     if (idempotencyIndexKey) {
       this.idempotencyIndex.set(idempotencyIndexKey, stored.id);
     }
@@ -2849,6 +2790,11 @@ export class MessageStore {
       }
     }
 
+    if (!options?.deferAppendNotification) this.notifyAppendedMessage(stored);
+    return stored;
+  }
+
+  private notifyAppendedMessage(stored: StoredMessage): void {
     // F102 KD-34: fire-and-forget append listener for thread index updates
     // P2 fix: try-catch handles sync throws; Promise.resolve handles async rejections
     if (this.onAppend) {
@@ -2858,8 +2804,6 @@ export class MessageStore {
         /* best-effort */
       }
     }
-
-    return stored;
   }
 
   appendIdempotent(msg: AppendMessageInput): IdempotentAppendResult {
@@ -2975,6 +2919,13 @@ export class MessageStore {
       threadId,
       revision: actualRevision + 1,
       text: input.text,
+      ...((input.companionSubmissions ?? existing?.companionSubmissions)
+        ? {
+            companionSubmissions: readCompanionDraftSubmissions(
+              input.companionSubmissions ?? existing?.companionSubmissions,
+            ),
+          }
+        : {}),
       ...(input.contentBlocks ? { contentBlocks: structuredClone(input.contentBlocks) } : {}),
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
       updatedAt: input.updatedAt,
@@ -2991,7 +2942,8 @@ export class MessageStore {
   ): ClearOwnerComposerDraftResult {
     assertValidStoredMessageTimestamp(clearedAt);
     const key = this.ownerComposerDraftKey(ownerUserId, threadId);
-    const actualRevision = this.ownerComposerDrafts.get(key)?.revision ?? 0;
+    const existing = this.ownerComposerDrafts.get(key);
+    const actualRevision = existing?.revision ?? 0;
     if (actualRevision !== expectedRevision) return { kind: 'revision_mismatch', actualRevision };
     const revision = actualRevision + 1;
     this.ownerComposerDrafts.set(key, {
@@ -3000,6 +2952,9 @@ export class MessageStore {
       threadId,
       revision,
       text: '',
+      ...(existing?.companionSubmissions
+        ? { companionSubmissions: structuredClone(existing.companionSubmissions) }
+        : {}),
       updatedAt: clearedAt,
     });
     return { kind: 'cleared', revision };
@@ -3258,15 +3213,21 @@ export class MessageStore {
     const matches: StoredMessage[] = [];
     const isVisible = resolveThreadMessageVisibility(options, userId);
 
-    for (let i = this.messages.length - 1; i >= 0 && matches.length < n; i--) {
-      const msg = this.messages[i]!;
-      if (msg.threadId !== threadId) continue;
+    const timeline = this.messages
+      .filter((message) => message.threadId === threadId)
+      .sort((a, b) => getTimelineOrderTime(a) - getTimelineOrderTime(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (let i = timeline.length - 1; i >= 0 && matches.length < n; i--) {
+      const msg = timeline[i]!;
       if (msg.deletedAt) continue;
       if (!isVisible(msg)) continue;
       if (userId && msg.userId !== userId && !isSystemUserMessage(msg)) continue;
       matches.push(msg);
     }
     return matches.reverse();
+  }
+
+  getThreadEvidenceProjection(threadId: string, limit?: number, userId?: string): MessageEvidenceProjection[] {
+    return projectMessageEvidence(this.getByThread(threadId, limit, userId));
   }
 
   getByThreadIncludingQueued(threadId: string, limit?: number, userId?: string): StoredMessage[] {
@@ -3473,9 +3434,11 @@ export class MessageStore {
     const matches: StoredMessage[] = [];
     const isVisible = resolveThreadMessageVisibility(options, userId);
 
-    for (let i = this.messages.length - 1; i >= 0 && matches.length < n; i--) {
-      const msg = this.messages[i]!;
-      if (msg.threadId !== threadId) continue;
+    const timeline = this.messages
+      .filter((message) => message.threadId === threadId)
+      .sort((a, b) => getTimelineOrderTime(a) - getTimelineOrderTime(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (let i = timeline.length - 1; i >= 0 && matches.length < n; i--) {
+      const msg = timeline[i]!;
       if (msg.deletedAt) continue;
       if (!isVisible(msg)) continue;
       if (userId && msg.userId !== userId && !isSystemUserMessage(msg)) continue;
@@ -3501,6 +3464,18 @@ export class MessageStore {
     options?: ThreadMessageReadOptions,
   ): BoundedThreadMessagePage {
     const rawLimit = Math.max(0, Math.floor(scanLimit));
+    const isVisible = resolveThreadMessageVisibility(options, userId);
+    const visible = (message: StoredMessage) =>
+      !message.deletedAt &&
+      isVisible(message) &&
+      (!userId || message.userId === userId || isSystemUserMessage(message));
+    if (options?.artifactProjection) {
+      const page = this.threadTimeline.readBefore(threadId, timestamp, beforeId, rawLimit);
+      return { ...page, messages: page.messages.filter(visible) };
+    }
+
+    // F148 keyword ranking consumes the bounded global memory window once.
+    // Account for every raw row, including other threads and rows past the cursor.
     const rawCandidates = rawLimit === 0 ? [] : this.messages.slice(-rawLimit);
     const candidates = rawCandidates
       .filter((message) => message.threadId === threadId)
@@ -3511,26 +3486,20 @@ export class MessageStore {
       })
       .filter((message) => {
         const effectiveTimestamp = getTimelineOrderTime(message);
-        if (effectiveTimestamp < timestamp) return true;
-        return effectiveTimestamp === timestamp && beforeId !== undefined && message.id < beforeId;
+        return (
+          effectiveTimestamp < timestamp ||
+          (effectiveTimestamp === timestamp && beforeId !== undefined && message.id < beforeId)
+        );
       });
-
-    const isVisible = resolveThreadMessageVisibility(options, userId);
-    const messages = candidates.filter((message) => {
-      if (message.deletedAt || !isVisible(message)) return false;
-      return !userId || message.userId === userId || isSystemUserMessage(message);
-    });
     const oldestCandidate = candidates.at(-1);
-    const nextCursor = oldestCandidate
-      ? { timestamp: getTimelineOrderTime(oldestCandidate), id: oldestCandidate.id }
-      : undefined;
-
     return {
-      messages: messages.reverse(),
+      messages: candidates.filter(visible).reverse(),
       scannedCount: rawCandidates.length,
       storageRoundTrips: 0,
       exhausted: rawCandidates.length >= this.messages.length,
-      ...(nextCursor ? { nextCursor } : {}),
+      ...(oldestCandidate
+        ? { nextCursor: { timestamp: getTimelineOrderTime(oldestCandidate), id: oldestCandidate.id } }
+        : {}),
     };
   }
 
@@ -3623,6 +3592,33 @@ export class MessageStore {
    * Keep memory and Redis semantics identical: callers submit a partial top-level
    * projection, so unrelated durable provenance must survive the update.
    */
+  recordCompanionDeliveryAcceptance(id: string, input: CompanionDeliveryAcceptance): StoredMessage | null {
+    const message = this.getById(id);
+    if (!message || message.userId !== input.ownerUserId || message.threadId !== input.threadId) return null;
+    const parsed = companionDeliveryReceiptSchema.safeParse({
+      clientMessageId: input.clientMessageId,
+      callId: input.callId,
+      contentDigest: input.contentDigest,
+      acceptedAt: input.acceptedAt,
+    });
+    if (
+      !parsed.success ||
+      !companionDeliveryMatches(message, parsed.data) ||
+      this.getByIdempotencyKey(input.ownerUserId, input.threadId, companionSubmissionKey(input))?.id !== id
+    )
+      return null;
+    const existing = message.companionDeliveryReceipt;
+    if (
+      existing &&
+      (existing.clientMessageId !== input.clientMessageId ||
+        existing.callId !== input.callId ||
+        existing.contentDigest !== input.contentDigest)
+    )
+      return null;
+    message.companionDeliveryReceipt = existing ?? parsed.data;
+    return structuredClone(message);
+  }
+
   updateExtra(id: string, extra: HostMessageExtra): StoredMessage | null {
     const msg = this.messages.find((m) => m.id === id);
     if (!msg || msg.recall || msg._tombstone) return null;
@@ -3633,10 +3629,6 @@ export class MessageStore {
       evolutionPreparationSubmissionV1: _stripPreparation,
       dotAsk: _stripDotAsk,
       deliveryBoundary: _stripBoundary,
-      collectiveOwnerAdmissionV1: _stripCollectiveAdmission,
-      collectiveWorkInvocationV1: _stripCollectiveInvocation,
-      collectiveWorkDelegationV1: _stripCollectiveDelegation,
-      collectiveAuthorizationInvalid: _stripCollectiveInvalid,
       ...hostOnly
     } = extra as Record<string, unknown>;
     msg.extra = { ...msg.extra, ...hostOnly };
@@ -3698,6 +3690,8 @@ export class MessageStore {
     if (msg.lifecycle.invocationId !== patch.invocationId) {
       return { kind: 'conflict', reason: 'invocation_mismatch', message: structuredClone(msg) };
     }
+    if (lifecycleResponseInputsChanged(msg, patch))
+      return { kind: 'conflict', reason: 'inputs_changed', message: structuredClone(msg) };
     if (
       !Number.isFinite(patch.completedAt) ||
       patch.completedAt < msg.lifecycle.startedAt ||
@@ -3765,14 +3759,23 @@ export class MessageStore {
       };
     }
 
+    if (source.recall || source._tombstone) {
+      return { kind: 'conflict', reason: 'invalid_failure', inputMessage: structuredClone(source) };
+    }
     const isQueuedInput = source.deliveryStatus === 'queued';
+    // One sibling may already have published this input. Only settle recipients
+    // with no dispatch reference; keep the original publication coordinates.
+    const isDeliveredInput =
+      source.deliveryStatus === 'delivered' &&
+      source.lifecycle?.kind === 'input' &&
+      (source.lifecycle.dispatchRefs?.length ?? 0) > 0;
     const isPublicAgentWake =
       source.deliveryStatus === undefined &&
       messageFrom(source).kind === 'agent' &&
       source.visibility !== 'whisper' &&
       source.lifecycle?.kind !== 'delivery_failure';
     const uniqueTargets = new Set(input.requestedTargets);
-    if (!isQueuedInput && !isPublicAgentWake) {
+    if (!isQueuedInput && !isDeliveredInput && !isPublicAgentWake) {
       return { kind: 'conflict', reason: 'not_queued', inputMessage: structuredClone(source) };
     }
     const inputIdentity = lifecycleInputIdentityForStoredMessage(source);
@@ -3792,8 +3795,7 @@ export class MessageStore {
       input.failedAt < source.timestamp ||
       input.requestedTargets.some((target) => typeof target !== 'string' || target.length === 0) ||
       uniqueTargets.size !== input.requestedTargets.length ||
-      input.requestedTargets.length > 1 ||
-      (isPublicAgentWake && input.requestedTargets.length === 0) ||
+      (!isQueuedInput && input.requestedTargets.length === 0) ||
       assigned.kind === 'conflict' ||
       !isLifecycleStoredMessageMetadata(failureLifecycle)
     ) {
@@ -3817,44 +3819,39 @@ export class MessageStore {
       return { kind: 'conflict', reason: 'invalid_failure', inputMessage: structuredClone(source) };
     }
 
-    const failureMessage = this.append(failureInput);
+    const failureId = generateSortableId(input.failedAt);
     const settledLifecycle =
       input.requestedTargets.length === 0
         ? assigned.lifecycle
         : settleAssignedLifecycleDispatchFailureMetadata(
             assigned.lifecycle,
             input.requestedTargets,
-            failureMessage.id,
+            failureId,
             input.failedAt,
           );
     if (!settledLifecycle) {
-      const failureIndex = this.messages.findIndex((message) => message.id === failureMessage.id);
-      if (failureIndex !== -1) this.messages.splice(failureIndex, 1);
-      this.pruneIdempotencyIndexForMessageIds([failureMessage.id]);
-      this.visibilitySeq.delete(failureMessage.id);
       return { kind: 'conflict', reason: 'invalid_failure', inputMessage: structuredClone(source) };
     }
+    // Validate the entire settlement before append can publish effects. Notify
+    // consumers only after the source and its failure are both committed.
+    const failureMessage = this.appendWithReservedId(failureInput, failureId, { deferAppendNotification: true });
     source.lifecycle = structuredClone(settledLifecycle);
-    if (isPublicAgentWake) {
-      return {
-        kind: 'applied',
-        inputMessage: structuredClone(source),
-        failureMessage: structuredClone(failureMessage),
-      };
-    }
-
-    source.timelineOrderAt = input.failedAt;
-    source.deliveredAt = input.failedAt;
-    source.deliveryStatus = 'delivered';
-    if (!this.visibilitySeq.has(source.id)) {
-      this.visibilitySeqCounter = Math.max(this.visibilitySeqCounter + 1, Date.now());
-      this.visibilitySeq.set(source.id, this.visibilitySeqCounter);
-      source.visibilitySeq = this.visibilitySeqCounter;
+    if (isQueuedInput) {
+      source.timelineOrderAt = input.failedAt;
+      source.deliveredAt = input.failedAt;
+      source.deliveryStatus = 'delivered';
+      this.threadTimeline.update(source);
+      if (!this.visibilitySeq.has(source.id)) {
+        this.visibilitySeqCounter = Math.max(this.visibilitySeqCounter + 1, Date.now());
+        this.visibilitySeq.set(source.id, this.visibilitySeqCounter);
+        source.visibilitySeq = this.visibilitySeqCounter;
+      }
     }
 
     if (failureMessage.lifecycle?.kind !== 'delivery_failure') {
       throw new Error(`pre-admission failure append lost lifecycle identity: ${failureMessage.id}`);
     }
+    this.notifyAppendedMessage(failureMessage);
     return {
       kind: 'applied',
       inputMessage: structuredClone(source),
@@ -3893,19 +3890,60 @@ export class MessageStore {
     return { kind: 'applied', messages: (messages as StoredMessage[]).map((message) => structuredClone(message)) };
   }
 
-  commitLifecycleAppendRejection(input: LifecycleAppendRejectionInput): CommitLifecycleAppendRejectionResult {
-    const ids = [...input.inputMessageIds, input.run.responseMessageId];
-    const messages = ids.map((id) => this.messages.find((message) => message.id === id));
-    if (messages.some((message) => !message)) return { kind: 'not_found' };
-    const prepared = prepareLifecycleAppendRejection(messages as StoredMessage[], input);
+  commitLifecycleAppendRecovery(
+    input: LifecycleAppendRecoveryInput,
+    ledgerStore: QueueLedgerStore,
+  ): LifecycleAppendRecoveryResult {
+    if (!(ledgerStore instanceof InMemoryQueueLedgerStore))
+      throw new Error('Append recovery requires the matching memory Queue ledger');
+    const source = this.messages.find((message) => message.id === input.entry.payload.messageId);
+    const response = this.messages.find((message) => message.id === input.failure.responseMessageId);
+    if (!source || !response) return { kind: 'not_found' };
+    const current = ledgerStore.getNow(input.entry.threadId, input.entry.id);
+    const prepared = prepareLifecycleAppendRecovery(source, response, current, input);
+    if (prepared.kind !== 'prepared') return structuredClone(prepared);
+    ledgerStore.replaceAppendRecoveryNow(current, prepared.entry);
+    source.lifecycle = structuredClone(prepared.lifecycles[0]);
+    response.lifecycle = structuredClone(prepared.lifecycles[1]);
+    return { kind: 'applied', messages: [structuredClone(source), structuredClone(response)], entry: prepared.entry };
+  }
+
+  commitLifecycleWakeCoverage(
+    input: LifecycleWakeCoverageInput,
+    ledgerStore: QueueLedgerStore,
+  ): LifecycleWakeCoverageResult {
+    if (!(ledgerStore instanceof InMemoryQueueLedgerStore))
+      throw new Error('Wake coverage requires the matching memory Queue ledger');
+    const sources = input.entries.map((entry) => this.messages.find((message) => message.id === entry.messageId));
+    const response = this.messages.find((message) => message.id === input.responseMessageId);
+    if (!response || sources.some((source) => !source)) return { kind: 'not_found' };
+    const entries = input.entries.map((entry) => ledgerStore.getNow(input.threadId, entry.entryId));
+    const prepared = prepareLifecycleWakeCoverage(sources as StoredMessage[], response, entries, input);
     if (prepared.kind !== 'prepared') return prepared;
-    if (prepared.replayed) {
-      return { kind: 'replayed', messages: (messages as StoredMessage[]).map((message) => structuredClone(message)) };
+    if (!prepared.replayed) {
+      ledgerStore.commitWakeCoverageNow(
+        input.threadId,
+        input.entries.map((entry) => entry.entryId),
+        entries,
+        prepared.entries,
+      );
+      for (const message of prepared.messages) {
+        const current = this.messages.find((candidate) => candidate.id === message.id)!;
+        current.lifecycle = structuredClone(message.lifecycle);
+        if (message.id === response.id) current.extra = structuredClone(message.extra);
+        else if (current.deliveryStatus === 'queued' && message.deliveryStatus === 'delivered') {
+          current.deliveryStatus = message.deliveryStatus;
+          current.deliveredAt = message.deliveredAt;
+          current.timelineOrderAt = message.timelineOrderAt;
+          this.threadTimeline.upsert(current);
+        }
+      }
     }
-    for (let index = 0; index < messages.length; index += 1) {
-      messages[index]!.lifecycle = structuredClone(prepared.lifecycles[index]!);
-    }
-    return { kind: 'applied', messages: (messages as StoredMessage[]).map((message) => structuredClone(message)) };
+    return {
+      kind: prepared.replayed ? 'replayed' : 'applied',
+      messages: structuredClone(prepared.messages),
+      entries: prepared.entries,
+    };
   }
 
   /**
@@ -3919,6 +3957,7 @@ export class MessageStore {
     msg.timelineOrderAt = resolveDeliveryTimelineScore(msg, deliveredAt);
     msg.deliveredAt = deliveredAt;
     msg.deliveryStatus = 'delivered';
+    this.threadTimeline.upsert(msg);
     // #1269: Preserve existing visibility position for already-published speech.
     // Timeline-published queued cat speech gets visibilitySeq at append — delivery
     // must NOT reallocate or it would move the message after later arrivals and
@@ -3940,6 +3979,7 @@ export class MessageStore {
     if (msg.deliveryStatus === 'queued') return { kind: 'existing', message: { ...msg } };
     if (msg.deliveryStatus !== undefined) return { kind: 'conflict' };
     msg.deliveryStatus = 'queued';
+    this.threadTimeline.upsert(msg);
     return { kind: 'prepared', message: { ...msg } };
   }
 
@@ -4000,10 +4040,11 @@ export async function hydrateReplyPreview(store: IMessageStore, replyToId: strin
 
   const truncated =
     parent.content.length > PREVIEW_MAX_LENGTH ? parent.content.slice(0, PREVIEW_MAX_LENGTH) : parent.content;
+  const source = storedMessageSource(parent);
 
   return {
     from: messageFrom(parent),
-    ...(parent.source ? { source: structuredClone(parent.source) } : {}),
+    ...(source ? { source: structuredClone(source) } : {}),
     senderCatId: parent.catId,
     content: truncated,
     ...(parent.extra?.scheduler?.hiddenTrigger ? { kind: 'scheduler_trigger' as const } : {}),

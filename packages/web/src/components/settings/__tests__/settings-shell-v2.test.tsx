@@ -14,9 +14,15 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
 
-const chat = vi.hoisted(() => ({ setWorkspaceMode: vi.fn(), openTeamSubject: vi.fn() }));
+const chat = vi.hoisted(() => ({
+  setCurrentThread: vi.fn(),
+  setWorkspaceMode: vi.fn(),
+  openTeamSubject: vi.fn(),
+}));
 vi.mock('@/stores/chatStore', () => ({
-  useChatStore: (select: (state: typeof chat) => unknown) => select(chat),
+  useChatStore: Object.assign((select: (state: typeof chat) => unknown) => select(chat), {
+    getState: () => chat,
+  }),
 }));
 
 const pins = vi.hoisted(() => ({ pinned: [] as string[], pin: vi.fn(), unpin: vi.fn() }));
@@ -71,6 +77,15 @@ describe('F322 设置与管理 shell (v2)', () => {
     expect(host.querySelectorAll('[data-testid^="settings-entry-"]')).toHaveLength(11);
     expect(host.querySelector('[data-testid="settings-entry-team"]')?.getAttribute('aria-current')).toBe('page');
     expect(host.querySelector('[data-testid="content"]')?.getAttribute('data-section')).toBe('members');
+  });
+
+  it('gives the plugin Manager a bounded height without an extra URL gate', () => {
+    render('s=plugins');
+    expect(host.querySelector('[data-trajectory-origin-scroll]')?.className).toContain('overflow-hidden');
+    expect(host.querySelector('[role="tabpanel"]')?.className).toContain('min-h-0 flex-1');
+    render('s=accounts');
+    expect(host.querySelector('[data-trajectory-origin-scroll]')?.className).toContain('overflow-y-auto');
+    expect(host.querySelector('[role="tabpanel"]')?.className).toContain('space-y-5');
   });
 
   it('old /settings?s= links and extra positioning params keep working, including deep-linked cat editing', () => {

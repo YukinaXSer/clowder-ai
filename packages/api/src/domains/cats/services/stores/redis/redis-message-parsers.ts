@@ -23,9 +23,6 @@ import {
   asrPersonMemoryDynamicSceneEntryV1Schema,
   CatRoutingErrorSchema,
   catOwnedSeedCueCarrierV1Schema,
-  collectiveOwnerAdmissionV1Schema,
-  collectiveWorkDelegationV1Schema,
-  collectiveWorkInvocationV1Schema,
   companionIdentitySnapshotV1Schema,
   contentModificationReceiptV1Schema,
   contentModificationSourceMessageV1Schema,
@@ -34,6 +31,7 @@ import {
   dotAskMetadataSchema,
   entrustedWorkHumanTerminalReceiptV1Schema,
   evolutionPreparationSubmissionV1Schema,
+  evolutionUseSourceV1Schema,
   isCloudBridgeRetryV1,
   isLifecycleStoredMessageMetadata,
   isMessageFrom,
@@ -252,21 +250,20 @@ type ExtraCarrierPersistenceClassification<
 type ExtraCarrierPersistence = ExtraCarrierPersistenceClassification<{
   outputLayout: 'parsed';
   a2aFailureReturn: 'parsed';
+  coveredA2AFailureReturns: 'parsed';
   contentModificationRequestV1: 'parsed';
   contentModificationReceiptV1: 'parsed';
-  collectiveOwnerAdmissionV1: 'parsed';
-  collectiveWorkInvocationV1: 'parsed';
-  collectiveWorkDelegationV1: 'parsed';
-  collectiveAuthorizationInvalid: 'derived';
   semanticEvent: 'parsed';
   runtimeInteractionReturn: 'parsed';
   runtimeInteractionCard: 'parsed';
   realtimeCompanion: 'parsed';
   liveCompanion: 'parsed';
   liveAdmission: 'parsed';
+  routingTargetSource: 'parsed';
   rich: 'parsed';
   callbackRichRequestDigest: 'parsed';
   isExplicitPost: 'parsed';
+  mediaPublication: 'parsed';
   stream: 'parsed';
   causal: 'parsed';
   dotAsk: 'parsed';
@@ -297,6 +294,7 @@ type ExtraCarrierPersistence = ExtraCarrierPersistenceClassification<{
   custodyOfferV1: 'derived';
   entrustedWorkHumanTerminalReceiptV1: 'parsed';
   evolutionPreparationSubmissionV1: 'parsed';
+  evolutionUseSourceV1: 'parsed';
   pluginMessage: 'parsed';
   routingWarnings: 'parsed';
   cloudBridgeRetry: 'parsed';
@@ -306,13 +304,14 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function parseA2AFailureReturn(value: unknown): StoredMessageExtra['a2aFailureReturn'] {
+function parseCoveredA2AFailureReturn(
+  value: unknown,
+): NonNullable<StoredMessageExtra['coveredA2AFailureReturns']>[number] | undefined {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   const receipt = value as Record<string, unknown>;
   if (
     !isNonEmptyString(receipt.triggerMessageId) ||
     !isNonEmptyString(receipt.callerCatId) ||
-    !isNonEmptyString(receipt.parentInvocationId) ||
     typeof receipt.isFailureReport !== 'boolean' ||
     (receipt.ownerAuthProvenance !== 'strict' &&
       receipt.ownerAuthProvenance !== 'compatibility_fallback' &&
@@ -322,10 +321,22 @@ function parseA2AFailureReturn(value: unknown): StoredMessageExtra['a2aFailureRe
   return {
     triggerMessageId: receipt.triggerMessageId,
     callerCatId: receipt.callerCatId,
-    parentInvocationId: receipt.parentInvocationId,
     isFailureReport: receipt.isFailureReport,
     ownerAuthProvenance: receipt.ownerAuthProvenance,
   };
+}
+
+function parseA2AFailureReturn(value: unknown): StoredMessageExtra['a2aFailureReturn'] {
+  const common = parseCoveredA2AFailureReturn(value);
+  if (
+    !common ||
+    typeof value !== 'object' ||
+    value === null ||
+    !('parentInvocationId' in value) ||
+    !isNonEmptyString(value.parentInvocationId)
+  )
+    return undefined;
+  return { ...common, parentInvocationId: value.parentInvocationId };
 }
 
 function parseRealtimeCompanionCarrier(value: unknown): StoredMessageExtra['realtimeCompanion'] {
@@ -506,33 +517,19 @@ export function safeParseExtra(raw: string | undefined): StoredMessage['extra'] 
       result.a2aFailureReturn = failureReturn;
       hasField = true;
     }
+    if (Array.isArray(parsed.coveredA2AFailureReturns)) {
+      const receipts: (NonNullable<StoredMessageExtra['coveredA2AFailureReturns']>[number] | undefined)[] =
+        parsed.coveredA2AFailureReturns.map(parseCoveredA2AFailureReturn);
+      if (receipts.every((receipt): receipt is NonNullable<typeof receipt> => receipt !== undefined)) {
+        result.coveredA2AFailureReturns = receipts;
+        hasField = true;
+      }
+    }
     const entrustedWorkTerminalReceipt = entrustedWorkHumanTerminalReceiptV1Schema.safeParse(
       parsed.entrustedWorkHumanTerminalReceiptV1,
     );
     if (entrustedWorkTerminalReceipt.success) {
       result.entrustedWorkHumanTerminalReceiptV1 = entrustedWorkTerminalReceipt.data;
-      hasField = true;
-    }
-    if (parsed.collectiveOwnerAdmissionV1 !== undefined) {
-      const admission = collectiveOwnerAdmissionV1Schema.safeParse(parsed.collectiveOwnerAdmissionV1);
-      if (admission.success) result.collectiveOwnerAdmissionV1 = admission.data;
-      else result.collectiveAuthorizationInvalid = true;
-      hasField = true;
-    }
-    if (parsed.collectiveWorkInvocationV1 !== undefined) {
-      const invocation = collectiveWorkInvocationV1Schema.safeParse(parsed.collectiveWorkInvocationV1);
-      if (invocation.success) result.collectiveWorkInvocationV1 = invocation.data;
-      else result.collectiveAuthorizationInvalid = true;
-      hasField = true;
-    }
-    if (parsed.collectiveWorkDelegationV1 !== undefined) {
-      const delegation = collectiveWorkDelegationV1Schema.safeParse(parsed.collectiveWorkDelegationV1);
-      if (delegation.success) result.collectiveWorkDelegationV1 = delegation.data;
-      else result.collectiveAuthorizationInvalid = true;
-      hasField = true;
-    }
-    if (parsed.collectiveAuthorizationInvalid === true) {
-      result.collectiveAuthorizationInvalid = true;
       hasField = true;
     }
 
@@ -592,6 +589,11 @@ export function safeParseExtra(raw: string | undefined): StoredMessage['extra'] 
       result.evolutionPreparationSubmissionV1 = evolutionPreparationSubmission.data;
       hasField = true;
     }
+    const evolutionUseSource = evolutionUseSourceV1Schema.safeParse(parsed.evolutionUseSourceV1);
+    if (evolutionUseSource.success) {
+      result.evolutionUseSourceV1 = evolutionUseSource.data;
+      hasField = true;
+    }
 
     const realtimeCompanion = parseRealtimeCompanionCarrier(parsed.realtimeCompanion);
     if (realtimeCompanion) {
@@ -608,6 +610,10 @@ export function safeParseExtra(raw: string | undefined): StoredMessage['extra'] 
       parsed.liveAdmission.targetId
     ) {
       result.liveAdmission = { sessionId: parsed.liveAdmission.sessionId, targetId: parsed.liveAdmission.targetId };
+      hasField = true;
+    }
+    if (parsed.routingTargetSource === 'prose' || parsed.routingTargetSource === 'explicit') {
+      result.routingTargetSource = parsed.routingTargetSource;
       hasField = true;
     }
     const liveCompanion = parseLiveCompanionCarrier(parsed.liveCompanion);
@@ -884,6 +890,12 @@ export function safeParseExtra(raw: string | undefined): StoredMessage['extra'] 
     }
     if (parsed.isExplicitPost === true) {
       result.isExplicitPost = true;
+      hasField = true;
+    }
+
+    // F202 W2-5b: write-once marker — the outbound media job owns this message's publication.
+    if (parsed.mediaPublication === 'deferred') {
+      result.mediaPublication = 'deferred';
       hasField = true;
     }
 

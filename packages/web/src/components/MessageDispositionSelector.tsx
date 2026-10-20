@@ -103,7 +103,11 @@ export function MessageDispositionSelector({ controller, onBack }: MessageDispos
           ))}
         </div>
 
-        {controller.error ? <p className="mt-1 px-0.5 text-micro text-conn-red-text">{controller.error}</p> : null}
+        {controller.error ? (
+          <p role="alert" className="mt-1 px-0.5 text-micro text-conn-red-text">
+            {controller.error}
+          </p>
+        ) : null}
       </div>
     </div>
   );

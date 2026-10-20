@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { mediaChatMime } from '@/components/content-review/media-chat-selection';
 import { modificationFocusStanding, usePendingModificationFocus } from '@/components/content-review/modification-focus';
 import { useShellPresentation } from '@/components/shell/shell-presentation';
 import type { WorkspaceSurfaceDescriptor } from '@/components/workbench/workbench-contract';
@@ -174,10 +175,14 @@ function ResolvedFileOwnerSurface({
   const isHtml = /\.html?$/i.test(target.path);
   const isJsx = /\.[jt]sx$/i.test(target.path);
   const isCollaborativeText = isMarkdown || /\.txt$/i.test(target.path) || canEdit;
-  const collaborationAvailable =
-    (isCollaborativeText && !file.truncated) || file.mime === 'image/png' || file.mime === 'video/mp4';
-  const fileReader = (controls?: ContentFileReaderControls) => (
-    <div className="flex min-h-0 flex-1" data-owner-worktree={target.worktreeId} data-owner-path={target.path}>
+  const collaborationAvailable = (isCollaborativeText && !file.truncated) || !!mediaChatMime(file.mime ?? '');
+  const fileReader = (controls?: ContentFileReaderControls, collaborationRefusal?: string) => (
+    <div className="flex min-h-0 flex-1 flex-col" data-owner-worktree={target.worktreeId} data-owner-path={target.path}>
+      {isV2 && (collaborationRefusal || (/^(image|video)\//.test(file.mime ?? '') && !collaborationAvailable)) ? (
+        <output className="shrink-0 px-3 py-2 text-xs text-cafe-muted">
+          {collaborationRefusal ?? '这份媒体可以查看；当前格式尚不支持批注。'}
+        </output>
+      ) : null}
       <WorkspaceFileViewer
         {...viewport}
         nestedWork={isV2}
@@ -212,7 +217,7 @@ function ResolvedFileOwnerSurface({
         onQuoteSelected={controls?.onQuoteSelected}
         onRequestModification={controls?.onRequestModification}
         modificationDisabled={controls?.modificationDisabled}
-        collaborationAvailable={!controls && collaborationAvailable}
+        collaborationAvailable={!controls && !collaborationRefusal && collaborationAvailable}
         onOpenCollaboration={() => {
           promoteWorkspacePreview(surfaceId);
           setCollaborationOpen(true);
@@ -243,6 +248,9 @@ function ResolvedFileOwnerSurface({
         scrollToLine={target.scrollToLine}
         navigationOrigin={navigationOrigin}
         onApplied={() => refreshFile(target.path)}
+        oversizedVideoReader={
+          isV2 && file.mime.startsWith('video/') ? (reason) => fileReader(undefined, reason) : undefined
+        }
         {...(isMarkdown ? { fileReader } : { onOpenFileTools: () => setCollaborationOpen(false) })}
         onBack={onBack}
       />

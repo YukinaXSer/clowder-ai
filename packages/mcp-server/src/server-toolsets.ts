@@ -7,17 +7,8 @@ import { derivedProfileSet, projectServerFamily } from './canonical-tool-registr
 import { jsonSchemaToZod } from './json-schema-to-zod.js';
 import { runWithNativeTurnAuth } from './native-turn-auth.js';
 import type { FamilyToolDefinition, McpServerFamily } from './tool-governance-snapshot.js';
-import {
-  appendFreshnessNoticeWithinBudget,
-  canRequestFreshnessNotice,
-  protectToolResponse,
-} from './tool-response-budget.js';
-import {
-  callbackPost,
-  getCallbackConfig,
-  type PostMessageRegistrationPrincipal,
-  projectPostMessageInputSchema,
-} from './tools/callback-tools.js';
+import { protectToolResponse } from './tool-response-budget.js';
+import { type PostMessageRegistrationPrincipal, projectPostMessageInputSchema } from './tools/callback-tools.js';
 import { getInvocationAuthSignal } from './tools/invocation-auth.js';
 
 export { CANONICAL_TOOL_REGISTRY } from './canonical-server-tools.js';
@@ -36,8 +27,6 @@ export const DESKTOP_CLOUD_PRO_PHASE0_ALLOWED_TOOLS = derivedProfileSet(
 const KNOWN_DESKTOP_MODES = new Set(['fable-phase0', 'cloud-pro-phase0', 'live-companion']);
 
 export interface ToolsetEnv {
-  collectiveWork?: boolean;
-  participation?: boolean;
   readonly?: boolean;
   hasAgentKey?: boolean;
   desktopMode?: string;
@@ -56,8 +45,7 @@ export interface ToolsetEnv {
  * tests may pass a fixture env to avoid module-cache games.
  */
 export function parseToolsetEnv(env: NodeJS.ProcessEnv = process.env): ToolsetEnv {
-  if (env.CAT_CAFE_MCP_PROFILE && !['collective-participation', 'collective-work'].includes(env.CAT_CAFE_MCP_PROFILE))
-    throw new Error('Unknown CAT_CAFE_MCP_PROFILE');
+  if (env.CAT_CAFE_MCP_PROFILE) throw new Error('Unknown CAT_CAFE_MCP_PROFILE');
   const desktopMode = env.CAT_CAFE_DESKTOP_MODE?.trim();
   if (
     desktopMode === 'live-companion' &&
@@ -65,8 +53,6 @@ export function parseToolsetEnv(env: NodeJS.ProcessEnv = process.env): ToolsetEn
   )
     throw new Error('Live companion requires native invocation binding');
   return {
-    collectiveWork: env.CAT_CAFE_MCP_PROFILE === 'collective-work',
-    participation: env.CAT_CAFE_MCP_PROFILE === 'collective-participation',
     readonly: env.CAT_CAFE_READONLY === 'true',
     // Credential USABILITY, not env presence (#1494): a '{}' variant map, bad
     // JSON, a blank secret, or a path to a missing sidecar resolve zero keys
@@ -82,7 +68,6 @@ export function parseToolsetEnv(env: NodeJS.ProcessEnv = process.env): ToolsetEn
  * Filter a list of tools by the current ToolsetEnv.
  *
  * Precedence:
- *   0. explicit Collective profile — no union with any other runtime surface.
  *   1. desktopMode — NOT union with READONLY/AGENT_KEY whitelists.
  *      Unknown value → throw (fail-fast on server startup).
  *   2. !readonly → return all tools unchanged.
@@ -95,15 +80,6 @@ export function applyReadonlyFilter<T extends { name: string }>(
   tools: readonly T[],
   env: ToolsetEnv = parseToolsetEnv(),
 ): readonly T[] {
-  if (env.collectiveWork) {
-    if (env.participation) throw new Error('Conflicting Collective MCP profiles');
-    const allowed = derivedProfileSet(CANONICAL_TOOL_REGISTRY, 'collective-work');
-    return tools.filter((tool) => allowed.has(tool.name));
-  }
-  if (env.participation) {
-    const allowed = derivedProfileSet(CANONICAL_TOOL_REGISTRY, 'collective-participation');
-    return tools.filter((tool) => allowed.has(tool.name));
-  }
   if (env.desktopMode) {
     if (!KNOWN_DESKTOP_MODES.has(env.desktopMode)) {
       throw new Error(
@@ -191,45 +167,6 @@ export function projectSchemaDeliveryMeta(definition: Pick<ToolDef, 'policy'>): 
   return definition.policy.schemaDelivery.policy === 'always-visible' ? { 'anthropic/alwaysLoad': true } : undefined;
 }
 
-// ── F254 Phase B1: In-memory freshness notice state (per MCP server process = per invocation) ──
-const freshnessNoticeState = { toolCallCount: 0, noticeDeliveredCount: 0, lastNoticeToolCallNum: 0 };
-const FRESHNESS_NOTICE_INTERVAL = 5;
-const FRESHNESS_MAX_NOTICES = 3;
-
-/**
- * F254 B1: Check if a freshness notice should be piggybacked on this tool result.
- * Frequency-gated in-memory (every 5 read-only calls, max 3 per invocation).
- * Only calls the API when the gate passes — minimizes HTTP overhead.
- */
-async function maybeFreshnessNotice(toolName: string, isReadOnly: boolean): Promise<string | null> {
-  freshnessNoticeState.toolCallCount++;
-
-  if (!isReadOnly) return null;
-  if (freshnessNoticeState.noticeDeliveredCount >= FRESHNESS_MAX_NOTICES) return null;
-  if (freshnessNoticeState.toolCallCount - freshnessNoticeState.lastNoticeToolCallNum < FRESHNESS_NOTICE_INTERVAL) {
-    return null;
-  }
-
-  if (!getCallbackConfig()) return null;
-
-  try {
-    const result = await callbackPost('/api/callbacks/freshness-notice-check', {
-      toolName,
-      isReadOnly: true,
-    });
-    if (result.isError) return null;
-
-    const data = JSON.parse((result.content[0] as { text: string }).text);
-    freshnessNoticeState.lastNoticeToolCallNum = freshnessNoticeState.toolCallCount;
-    if (data?.notice?.text) {
-      return data.notice.text;
-    }
-  } catch {
-    // Fail-open: notice errors never block tool execution.
-  }
-  return null;
-}
-
 function resolvePostMessageRegistrationPrincipal(env: ToolsetEnv): PostMessageRegistrationPrincipal {
   if (process.env.CAT_CAFE_NATIVE_TURN_CREDENTIAL_FILE) return 'invocation';
   if (getInvocationAuthSignal().hasFullCredentials) return 'invocation';
@@ -291,31 +228,6 @@ function registerTools(server: McpServer, tools: readonly ToolDef[], env: Toolse
             [key: string]: unknown;
           };
 
-          // F254 B1: Piggyback freshness notice on successful read-only tool results
-          // The named metrics read owns a total transport budget and one fixed
-          // endpoint. A second, unbounded freshness POST would violate it.
-          if (
-            tool.name !== 'cat_cafe_get_recall_metrics' &&
-            !typed.isError &&
-            annotations.readOnlyHint &&
-            canRequestFreshnessNotice(typed)
-          ) {
-            const noticeText = await maybeFreshnessNotice(tool.name, annotations.readOnlyHint);
-            if (noticeText) {
-              const appended = appendFreshnessNoticeWithinBudget(typed, noticeText);
-              if (appended.appended) {
-                typed.content = appended.result.content as typeof typed.content;
-                freshnessNoticeState.noticeDeliveredCount++;
-              } else {
-                // An older API may violate the notice-length contract after it
-                // has already recorded delivery. Keep the true notice visible.
-                typed.content = [...typed.content, { type: 'text', text: `\n\n${noticeText}` }];
-                freshnessNoticeState.noticeDeliveredCount++;
-                return typed;
-              }
-            }
-          }
-
           return protectToolResponse(tool.name, typed, annotations.readOnlyHint);
         }),
     );
@@ -353,7 +265,7 @@ export function buildLimbTools(env?: ToolsetEnv): readonly ToolDef[] {
   // full limb surface in standalone limb.ts entry. Antigravity / default
   // (no desktopMode set) keeps the F061 contract: limb fully exposed,
   // not filtered by readonly.
-  if (e.desktopMode || e.participation || e.collectiveWork) {
+  if (e.desktopMode) {
     return buildFamilyTools('limb', e);
   }
   return CANONICAL_TOOL_REGISTRY.filter((definition) => definition.serverFamily === 'limb');
