@@ -46,6 +46,20 @@ export const OFFICIAL_PLUGIN_HOST_POLICIES: readonly MachineCatalogHostPolicy[] 
     effectiveGrants: ['thread.readContent', 'thread.listMetadata', 'messaging.send'],
   },
   {
+    pluginId: 'dev.clowder.issue-workbench',
+    // Evidence-backed analysis and configured inbox delivery use ordinary owner conversations.
+    // Keep business records in instance storage; no Task admission or arbitrary thread creation.
+    effectiveGrants: [
+      'plugin.config.read',
+      'plugin.state.get',
+      'plugin.state.set',
+      'thread.readContent',
+      'thread.listMetadata',
+      'messaging.send',
+      'schedule.register',
+    ],
+  },
+  {
     pluginId: 'official.collective-connector',
     // Shipped Collective features: private state/browser binding, ordinary thread messages,
     // canonical Task data, and subscribed result materials. Each Host port retains its
