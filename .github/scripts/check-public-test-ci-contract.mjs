@@ -3,6 +3,18 @@ import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 
 const workflow = parse(readFileSync(new URL('../workflows/ci.yml', import.meta.url), 'utf8'));
+for (const [filename, events] of [
+  ['ci.yml', ['push', 'pull_request']],
+  ['windows-smoke.yml', ['pull_request']],
+  ['macos-preview-smoke.yml', ['pull_request']],
+]) {
+  const triggers = parse(readFileSync(new URL(`../workflows/${filename}`, import.meta.url), 'utf8')).on;
+  for (const event of events) {
+    for (const branch of ['main', 'develop']) {
+      assert.ok(triggers[event].branches.includes(branch), `${filename} ${event} must cover ${branch}`);
+    }
+  }
+}
 const lintCheckout = workflow.jobs.lint.steps.find((step) => step.uses === 'actions/checkout@v4');
 assert.equal(
   lintCheckout?.with?.['fetch-depth'],
