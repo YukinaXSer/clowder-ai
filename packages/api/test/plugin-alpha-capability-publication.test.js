@@ -45,7 +45,10 @@ test('a runtime-labelled linked worktree without its root cannot publish or remo
 test('a persistent runtime still publishes its own managed MCP descriptor', async (t) => {
   const f = await fixture(t, 'runtime');
   await f.mutate(true);
-  assert.equal(await f.runtime.supervisor.resolveMemberMcpView(), undefined);
+  const view = await f.runtime.supervisor.resolveMemberMcpView();
+  assert.equal(view.localCapabilityRoot, undefined, 'persistent policy remains owned by its existing config');
+  assert.equal(view.entries.length, 1);
+  assert.equal(view.isCurrent(), true);
   const config = await readCapabilitiesConfig(f.capabilityProjectRoot);
   const mcp = config.capabilities.find((entry) => entry.id === `plugin:${f.pluginId}:native`);
   assert.ok(mcp.mcpServer.workingDir.startsWith(f.projectRoot));

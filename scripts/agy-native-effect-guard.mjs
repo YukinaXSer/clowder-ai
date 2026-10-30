@@ -21,12 +21,15 @@ const CONTROL_ENTRIES = new Set(['hooks.json', 'mcp_config.json', 'agents', 'plu
 
 function profileControlPath(path, profileHome) {
   if (!profileHome) return false;
-  const roots = [resolve(profileHome), kernelPath(profileHome)].filter(Boolean).map((root) => root.toLowerCase());
-  if (roots.includes(path)) return true;
-  const root = roots.find((root) => path.startsWith(`${root}/`));
+  const normalized = path.replaceAll('\\', '/');
+  const roots = [resolve(profileHome), kernelPath(profileHome)]
+    .filter(Boolean)
+    .map((root) => root.toLowerCase().replaceAll('\\', '/'));
+  if (roots.includes(normalized)) return true;
+  const root = roots.find((root) => normalized.startsWith(`${root}/`));
   // The run's data alias is the account's native storage. Keep ordinary brain
   // artifacts writable there; configuration and the alias directory itself stay protected.
-  const suffix = (root ? path.slice(root.length + 1) : '').replace(
+  const suffix = (root ? normalized.slice(root.length + 1) : '').replace(
     /^\.cat-cafe-native-runs\/run-[a-z0-9]+\/(?=\.gemini\/antigravity-cli\/)/,
     '',
   );

@@ -223,12 +223,14 @@ export class PluginRuntimeCarrierRouter implements PluginRuntimeLifecyclePort {
     return this.#nativeMcpLaunches.resolve(policy);
   }
 
-  /** Isolated deployments read local launches without publishing into the persistent capability root. */
+  /** Every deployment freezes local activation; only isolated Hosts add unpublished policies. */
   async resolveMemberMcpView(): Promise<
     import('../../../config/capabilities/invocation-plugin-mcp-view.js').InvocationPluginMcpView | undefined
   > {
-    if (this.resources?.persistCapabilities !== false) return undefined;
-    return this.#nativeMcpLaunches.memberView(this.resources.projectRoot);
+    if (!this.resources) return undefined;
+    return this.#nativeMcpLaunches.memberView(
+      this.resources.persistCapabilities === false ? this.resources.projectRoot : undefined,
+    );
   }
 
   async deliver(pluginInstanceId: string, input: PluginDeliveryInput): Promise<PluginDeliveryReceipt> {
