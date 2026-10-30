@@ -10,7 +10,7 @@ name: Windows Smoke
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths-ignore:
       - 'docs/**'
       - '*.md'

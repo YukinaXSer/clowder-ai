@@ -6,6 +6,7 @@ import {
 } from '@clowder-ai/plugin-contract';
 import type { ToolExecutionPolicy } from '../../cats/services/types.js';
 import { activateDeclaredMcp } from '../declared/declared-mcp-resources.js';
+import { DeclaredPluginUi } from '../declared/declared-plugin-ui.js';
 import {
   type DeclaredPluginTool,
   type DeclaredPluginWebhook,
@@ -76,6 +77,7 @@ export interface PluginRuntimeCarrier {
 }
 
 export class PluginRuntimeCarrierRouter implements PluginRuntimeLifecyclePort {
+  readonly ui = new DeclaredPluginUi((id, method, input) => this.invoke(id, method, input));
   readonly nativeActions = new NativePluginActions((id) => this.#admission(id));
   readonly #nativeMcpLaunches = new NativeMcpLaunches((id) => this.#admission(id), this.nativeActions);
   readonly #carriers: PluginRuntimeCarrier[] = [];
@@ -133,6 +135,7 @@ export class PluginRuntimeCarrierRouter implements PluginRuntimeLifecyclePort {
         },
       );
       this.#nativeMcpLaunches.activate(admission, generation, launches);
+      this.ui.activate(admission);
       return result;
     } catch (error) {
       await this.#rollbackStartedRuntime(error, carrier, admission, previousSkillPolicy);
@@ -140,6 +143,7 @@ export class PluginRuntimeCarrierRouter implements PluginRuntimeLifecyclePort {
   }
 
   async stop(pluginInstanceId: string, reason = 'host_stop'): Promise<void> {
+    this.ui.deactivate(pluginInstanceId);
     this.#nativeMcpLaunches.deactivate(pluginInstanceId);
     this.nativeActions.deactivate(pluginInstanceId);
     const snapshot = await this.inventory.snapshot();
